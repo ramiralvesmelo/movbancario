@@ -29,7 +29,7 @@ public class MovimentoBancarioH2Repository {
 
 		try (Connection connection = dataSource.getConnection();
 
-				PreparedStatement statement = connection.prepareStatement(SQL_INSERT)) {
+			PreparedStatement statement = connection.prepareStatement(SQL_INSERT)) {
 
 			for (RegistroCnab registro : lote) {
 

@@ -28,64 +28,6 @@ public class ProcessadorArquivoServiceAsynByCountTest {
 
 	private MovimentoBancarioRedisRepository redisRepository;
 
-	@Before
-	public void before() throws Exception {
-
-		LOG.info("Inicializando cenário de teste multi-thread.");
-
-		service = ProcessadorArquivoFactory.criarService();
-
-		redisRepository = service.redisRepository;
-
-		LOG.info("Service inicializado com sucesso.");
-
-	}
-
-	//@After
-	public void after() throws Exception {
-
-		LOG.info("Iniciando limpeza Redis.");
-
-		final File diretorio = new File("src/test/resources/cnab");
-
-		/*
-		 * Lista arquivos CNAB.
-		 */
-		final File[] arquivos = diretorio.listFiles((file) -> file.isFile() && file.getName().endsWith(".txt"));
-
-		if (arquivos == null || arquivos.length == 0) {
-
-			LOG.warn("Nenhum arquivo encontrado para limpeza.");
-
-			return;
-
-		}
-
-		/*
-		 * Remove chaves Redis.
-		 */
-		for (File arquivo : arquivos) {
-
-			try {
-
-				LOG.info("Removendo chaves Redis arquivo={}", arquivo.getName());
-
-				redisRepository.removerArquivoValido(arquivo.getName());
-
-				redisRepository.removerArquivoInvalido(arquivo.getName());
-
-			} catch (Exception e) {
-
-				LOG.error("Erro limpeza Redis arquivo={}", arquivo.getName(), e);
-
-			}
-
-		}
-
-		LOG.info("Finalizada limpeza Redis.");
-
-	}
-
 	@Test
 	public void processar() throws Exception {
 
@@ -193,5 +135,63 @@ public class ProcessadorArquivoServiceAsynByCountTest {
 		LOG.info("==================================================");
 
 	}
+	
+	@Before
+	public void before() throws Exception {
+
+		LOG.info("Inicializando cenário de teste multi-thread.");
+
+		service = ProcessadorArquivoFactory.criarService();
+
+		redisRepository = service.redisRepository;
+
+		LOG.info("Service inicializado com sucesso.");
+
+	}
+
+	//@After
+	public void after() throws Exception {
+
+		LOG.info("Iniciando limpeza Redis.");
+
+		final File diretorio = new File("src/test/resources/cnab");
+
+		/*
+		 * Lista arquivos CNAB.
+		 */
+		final File[] arquivos = diretorio.listFiles((file) -> file.isFile() && file.getName().endsWith(".txt"));
+
+		if (arquivos == null || arquivos.length == 0) {
+
+			LOG.warn("Nenhum arquivo encontrado para limpeza.");
+
+			return;
+
+		}
+
+		/*
+		 * Remove chaves Redis.
+		 */
+		for (File arquivo : arquivos) {
+
+			try {
+
+				LOG.info("Removendo chaves Redis arquivo={}", arquivo.getName());
+
+				redisRepository.removerArquivoValido(arquivo.getName());
+
+				redisRepository.removerArquivoInvalido(arquivo.getName());
+
+			} catch (Exception e) {
+
+				LOG.error("Erro limpeza Redis arquivo={}", arquivo.getName(), e);
+
+			}
+
+		}
+
+		LOG.info("Finalizada limpeza Redis.");
+
+	}	
 
 }
