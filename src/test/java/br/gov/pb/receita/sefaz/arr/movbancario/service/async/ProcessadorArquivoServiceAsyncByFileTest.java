@@ -9,8 +9,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import br.gov.pb.receita.sefaz.arr.movbancario.service.ProcessadorArquivoFactory;
 import br.gov.pb.receita.sefaz.arr.movbancario.service.ProcessadorArquivoService;
+import br.gov.pb.receita.sefaz.arr.movbancario.service.factory.ProcessadorArquivoFactory;
 
 public class ProcessadorArquivoServiceAsyncByFileTest {
 
