@@ -1,4 +1,4 @@
-package br.gov.pb.receita.sefaz.arr.movbancario.service.factory;
+package br.gov.pb.receita.sefaz.arr.movbancario.factory;
 
 import java.lang.reflect.Field;
 import java.sql.Connection;

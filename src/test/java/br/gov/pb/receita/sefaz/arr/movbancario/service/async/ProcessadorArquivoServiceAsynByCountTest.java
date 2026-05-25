@@ -6,15 +6,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import br.gov.pb.receita.sefaz.arr.movbancario.factory.ProcessadorArquivoFactory;
 import br.gov.pb.receita.sefaz.arr.movbancario.repository.MovimentoBancarioRedisRepository;
 import br.gov.pb.receita.sefaz.arr.movbancario.service.ProcessadorArquivoService;
-import br.gov.pb.receita.sefaz.arr.movbancario.service.factory.ProcessadorArquivoFactory;
 
 public class ProcessadorArquivoServiceAsynByCountTest {
 
@@ -42,7 +41,7 @@ public class ProcessadorArquivoServiceAsynByCountTest {
 
 	}
 
-	@After
+	//@After
 	public void after() throws Exception {
 
 		LOG.info("Iniciando limpeza Redis.");
@@ -107,8 +106,8 @@ public class ProcessadorArquivoServiceAsynByCountTest {
 
 		LOG.info("==================================================");
 		LOG.info("INICIO PROCESSAMENTO LOTE");
-		LOG.info("Quantidade arquivos: {}", arquivos.length);
 		LOG.info("Threads fixas: {}", THREADS);
+		LOG.info("Quantidade arquivos: {}", arquivos.length);		
 		LOG.info("Horario inicio: {}", new Date());
 		LOG.info("==================================================");
 
