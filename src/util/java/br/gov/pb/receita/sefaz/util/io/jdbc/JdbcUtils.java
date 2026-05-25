@@ -2,123 +2,161 @@ package br.gov.pb.receita.sefaz.util.io.jdbc;
 
 import java.sql.Connection;
 
+import org.jboss.logging.Logger;
+
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 public final class JdbcUtils {
 
-    private JdbcUtils() {
-    }
+	private static final Logger LOGGER = Logger.getLogger(JdbcUtils.class);
 
-    /*
-     * Realiza rollback transacional.
-     */
-    public static void rollback(
-            Connection connection) {
+	private JdbcUtils() {
+	}
 
-        if (connection == null) {
-            return;
-        }
+	/*
+	 * Realiza rollback transacional.
+	 */
+	public static void rollback(Connection connection) {
 
-        try {
+		if (connection == null) {
 
-            connection.rollback();
+			LOGGER.warn("Rollback ignorado. Connection nula.");
 
-        } catch (Exception e) {
+			return;
 
-            e.printStackTrace();
+		}
 
-        }
+		try {
 
-    }
+			LOGGER.debug("Realizando rollback JDBC.");
 
-    /*
-     * Fecha conexão JDBC.
-     */
-    public static void close(
-            Connection connection) {
+			connection.rollback();
 
-        if (connection == null) {
-            return;
-        }
+			LOGGER.debug("Rollback JDBC realizado com sucesso.");
 
-        try {
+		} catch (Exception e) {
 
-            connection.close();
+			LOGGER.error("Erro ao realizar rollback JDBC.", e);
 
-        } catch (Exception e) {
+		}
 
-            e.printStackTrace();
+	}
 
-        }
+	/*
+	 * Fecha conexão JDBC.
+	 */
+	public static void close(Connection connection) {
 
-    }
+		if (connection == null) {
 
-    /*
-     * Restaura auto commit padrão.
-     */
-    public static void resetAutoCommit(
-            Connection connection) {
+			LOGGER.warn("Close JDBC ignorado. Connection nula.");
 
-        if (connection == null) {
-            return;
-        }
+			return;
 
-        try {
+		}
 
-            connection.setAutoCommit(
-                    true);
+		try {
 
-        } catch (Exception e) {
+			LOGGER.debug("Fechando conexão JDBC.");
 
-            e.printStackTrace();
+			connection.close();
 
-        }
+			LOGGER.debug("Conexão JDBC fechada com sucesso.");
 
-    }
+		} catch (Exception e) {
 
-    /*
-     * Fecha conexão Redis Jedis.
-     */
-    public static void close(
-            Jedis jedis) {
+			LOGGER.error("Erro ao fechar conexão JDBC.", e);
 
-        if (jedis == null) {
-            return;
-        }
+		}
 
-        try {
+	}
 
-            jedis.close();
+	/*
+	 * Restaura auto commit padrão.
+	 */
+	public static void resetAutoCommit(Connection connection) {
 
-        } catch (Exception e) {
+		if (connection == null) {
 
-            e.printStackTrace();
+			LOGGER.warn("Reset autoCommit ignorado. Connection nula.");
 
-        }
+			return;
 
-    }
+		}
 
-    /*
-     * Fecha pool Redis.
-     */
-    public static void close(
-            JedisPool jedisPool) {
+		try {
 
-        if (jedisPool == null) {
-            return;
-        }
+			LOGGER.debug("Restaurando autoCommit=true.");
 
-        try {
+			connection.setAutoCommit(true);
 
-            jedisPool.close();
+			LOGGER.debug("autoCommit restaurado com sucesso.");
 
-        } catch (Exception e) {
+		} catch (Exception e) {
 
-            e.printStackTrace();
+			LOGGER.error("Erro ao restaurar autoCommit.", e);
 
-        }
+		}
 
-    }
+	}
+
+	/*
+	 * Fecha conexão Redis Jedis.
+	 */
+	public static void close(Jedis jedis) {
+
+		if (jedis == null) {
+
+			LOGGER.warn("Close Redis ignorado. Jedis nulo.");
+
+			return;
+
+		}
+
+		try {
+
+			LOGGER.debug("Fechando conexão Redis Jedis.");
+
+			jedis.close();
+
+			LOGGER.debug("Conexão Redis Jedis fechada com sucesso.");
+
+		} catch (Exception e) {
+
+			LOGGER.error("Erro ao fechar conexão Redis Jedis.", e);
+
+		}
+
+	}
+
+	/*
+	 * Fecha pool Redis.
+	 */
+	public static void close(JedisPool jedisPool) {
+
+		if (jedisPool == null) {
+
+			LOGGER.warn("Close Redis Pool ignorado. JedisPool nulo.");
+
+			return;
+
+		}
+
+		try {
+
+			LOGGER.debug("Fechando pool Redis.");
+
+			jedisPool.close();
+
+			LOGGER.debug("Pool Redis fechado com sucesso.");
+
+		} catch (Exception e) {
+
+			LOGGER.error("Erro ao fechar pool Redis.", e);
+
+		}
+
+	}
 
 }

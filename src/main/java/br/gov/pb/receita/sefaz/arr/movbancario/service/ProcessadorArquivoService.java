@@ -27,33 +27,19 @@ import br.gov.pb.receita.sefaz.util.io.leitor.LeitorArquivoStream;
  *
  * Agendador
  *      ↓
- * Controle de execução única
+ * Controle execução única
  *      ↓
- * Leitura streaming do arquivo
+ * Leitura streaming
  *      ↓
- * Normalização da linha
- *      ↓
- * Validação estrutural/layout
- *      ↓
- * Controle de duplicidade
- *      ↓
- * Separação lógica:
- *      - registros válidos
- *      - registros inválidos
+ * Validação layout
  *      ↓
  * Persistência temporária Redis
  *      ↓
- * Recuperação batch dos registros válidos
+ * Recuperação batch Redis
  *      ↓
- * Transformação para DTO
+ * Transformação DTO
  *      ↓
  * Persistência JDBC batch
- *      ↓
- * Commit transacional por lote
- *      ↓
- * Atualização checkpoint/log operacional
- *      ↓
- * Limpeza recursos temporários Redis
  *      ↓
  * Finalização
  *
@@ -61,31 +47,20 @@ import br.gov.pb.receita.sefaz.util.io.leitor.LeitorArquivoStream;
  *
  * - processamento streaming
  * - baixo consumo memória
- * - fail-fast para registros inválidos
- * - tolerância a falhas
- * - rastreabilidade operacional
- * - prevenção de duplicidade
+ * - fail-fast registros inválidos
  * - persistência temporária Redis
- * - separação de registros inválidos
  * - processamento batch JDBC
- * - preservação da ordem posicional CNAB
- * - redução de consumo heap/JVM
- *
- * Caso o registro já exista:
- *
- * - a linha é ignorada
- * - não é persistida novamente
- * - evita reprocessamento duplicado
- * - preserva integridade operacional
+ * - rastreabilidade operacional
+ * - preservação ordem CNAB
+ * - tolerância falhas
  *
  * Benefícios:
  *
+ * - desacoplamento leitura/persistência
+ * - melhoria throughput ETL
  * - reprocessamento controlado
- * - troubleshooting operacional
- * - observabilidade
- * - resiliência do ETL
- * - desacoplamento entre leitura e persistência
- * - prevenção de inconsistência por duplicidade
+ * - observabilidade operacional
+ * - redução consumo heap JVM
  */
 @Stateless
 public class ProcessadorArquivoService {
@@ -103,22 +78,24 @@ public class ProcessadorArquivoService {
 	@EJB
 	public MovimentoBancarioRedisRepository redisRepository;
 
-	ValidadorCnab240 validador = new ValidadorCnab240();
+	private final ValidadorCnab240 validador = new ValidadorCnab240();
 
-	TransformadorCnab240 transformador = new TransformadorCnab240();
+	private final TransformadorCnab240 transformador = new TransformadorCnab240();
 
 	@TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
 	public void processar(File arquivo) throws Exception {
 
-		LOGGER.info("Iniciando processamento arquivo: " + arquivo.getName());
+		LOGGER.infof("Iniciando processamento arquivo: %s", arquivo.getName());
 
 		/*
 		 * Bloco temporário Redis.
 		 */
-		List<String> blocoRedis = new ArrayList<>();
+		final List<String> blocoRedis = new ArrayList<>();
 
-		/*
-		 * Etapa 1: Leitura streaming + validação inicial + persistência Redis.
+		/**
+		 * =============================================================================================== 
+		 * ETAPA 01 - l leitura streaming + file system lock > validação CNAB > carga temporária Redis
+		 * ===============================================================================================		 
 		 */
 		LeitorArquivoStream.processar(arquivo, (linha, numeroLinha) -> {
 
@@ -137,26 +114,22 @@ public class ProcessadorArquivoService {
 
 				/*
 				 * Validação antecipada.
-				 *
-				 * Objetivo: - impedir persistência inválida - evitar lixo
-				 * operacional no Redis - detectar erro o mais cedo possível -
-				 * reduzir retrabalho
 				 */
 				validador.validar(linha, numeroLinha);
 
 				/*
-				 * Adiciona somente registros válidos.
+				 * Adiciona somente válidos.
 				 */
 				blocoRedis.add(linha);
 
 				/*
-				 * Persistência Redis batch.
+				 * Persistência batch Redis.
 				 */
 				if (blocoRedis.size() >= BATCH_SIZE) {
 
 					redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
 
-					LOGGER.info("Bloco Redis persistido: " + blocoRedis.size());
+					LOGGER.infof("Bloco Redis persistido. registros=%d", blocoRedis.size());
 
 					blocoRedis.clear();
 
@@ -165,15 +138,15 @@ public class ProcessadorArquivoService {
 			} catch (Exception e) {
 
 				/*
-				 * Persistência registros inválidos.
+				 * Persistência inválidos.
 				 */
-				List<String> invalidos = new ArrayList<>();
+				final List<String> invalidos = new ArrayList<>();
 
 				invalidos.add(linha + "|ERRO=" + e.getMessage());
 
 				redisRepository.salvarBlocoInvalido(arquivo.getName(), invalidos);
 
-				LOGGER.error("Registro inválido. " + "linha=" + numeroLinha, e);
+				LOGGER.errorf(e, "Registro inválido. linha=%d", numeroLinha);
 
 			}
 
@@ -188,8 +161,7 @@ public class ProcessadorArquivoService {
 
 				redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
 
-				LOGGER.info("Saldo final Redis persistido. " + "arquivo=" + arquivo.getName() + " registros="
-						+ blocoRedis.size());
+				LOGGER.infof("Saldo final Redis persistido. registros=%d", blocoRedis.size());
 
 			} finally {
 
@@ -199,25 +171,30 @@ public class ProcessadorArquivoService {
 
 		}
 
-		LOGGER.info("Carga Redis finalizada: " + arquivo.getName());
+		LOGGER.infof("Carga Redis finalizada: %s", arquivo.getName());
 
-		/*
-		 * Etapa 2: Recuperação Redis em bloco.
+		/**
+		 * =============================================================================================== 
+		 * ETAPA 02 - Extração Redis > transformação DTO 
+		 * ===============================================================================================		 
+		 *  
 		 */
 		long bloco = 0;
 
 		while (true) {
 
-			List<String> linhas = redisRepository.obterBlocoValido(arquivo.getName(), bloco, BATCH_SIZE);
+			final List<String> linhas = redisRepository.obterBlocoValido(arquivo.getName(), bloco, BATCH_SIZE);
 
 			/*
 			 * Finaliza processamento.
 			 */
 			if (linhas.isEmpty()) {
+
 				break;
+
 			}
 
-			List<RegistroCnab> lote = new ArrayList<>();
+			final List<RegistroCnab> lote = new ArrayList<>();
 
 			long numeroLinha = (bloco * BATCH_SIZE);
 
@@ -229,30 +206,41 @@ public class ProcessadorArquivoService {
 				 * Ignora header.
 				 */
 				if (numeroLinha == 1) {
+
 					continue;
+
 				}
 
 				/*
 				 * Transformação DTO.
 				 */
-				RegistroCnab registro = transformador.transformar(linha, numeroLinha);
+				final RegistroCnab registro = transformador.transformar(linha, numeroLinha);
 
 				lote.add(registro);
 
 			}
 
-			/*
-			 * Persistência banco batch.
+			/**
+			 * =============================================================================================== 
+			 *  ETAPA 03 - Persistência no banco com JDBC Batch (em bloco)
+			 * ===============================================================================================
 			 */
 			repository.salvarLote(lote);
 
-			LOGGER.info("Bloco persistido banco. " + "bloco=" + bloco + " registros=" + lote.size());
+			LOGGER.infof("Bloco persistido banco. bloco=%d registros=%d", bloco, lote.size());
 
 			bloco++;
 
 		}
 
-		LOGGER.info("Processamento finalizado: " + arquivo.getName());
+		/**
+		 * ===============================================================================================
+		 * 	ETAPA 04 - FINALIZAÇÃO + LIMPEZA 
+		 * ===============================================================================================
+		 *
+		 * pós-processamento > limpeza recursos > finalização ETL
+		 */
+		LOGGER.infof("Processamento finalizado: %s", arquivo.getName());
 
 	}
 

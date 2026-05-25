@@ -6,7 +6,11 @@
 	<artifactId>movbancario</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<packaging>jar</packaging>
-
+	<description>Processamento em Lote - ETL
+		Exemplos de processamento síncrono (Sync) e assíncrono (Async),
+		utilizando Redis como mecanismo de cache e controle de concorrência
+		para validação, bloqueio lógico e rastreamento do processamento dos arquivos.
+	</description>
 	<name>remote-ejb-sefaz</name>
 	<url>http://maven.apache.org</url>
 
@@ -65,7 +69,7 @@
 			<version>2.2.224</version>
 			<scope>test</scope>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-simple</artifactId>
@@ -74,9 +78,30 @@
 		</dependency>
 
 	</dependencies>
-	<description>Processamento em Lote - ETL
 
-Exemplos de processamento síncrono (Sync) e assíncrono (Async),
-utilizando Redis como mecanismo de cache e controle de concorrência
-para validação, bloqueio lógico e rastreamento do processamento dos arquivos.</description>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>build-helper-maven-plugin</artifactId>
+				<version>3.0.0</version>
+				<executions>
+					<execution>
+						<id>add-source</id>
+						<phase>generate-sources</phase>
+						<goals>
+							<goal>add-source</goal>
+						</goals>
+						<configuration>
+							<sources>
+								<source>
+									src/util/java
+								</source>
+							</sources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
 </project>
