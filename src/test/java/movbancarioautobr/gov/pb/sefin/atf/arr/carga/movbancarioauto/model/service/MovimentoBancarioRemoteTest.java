@@ -16,52 +16,22 @@ public class MovimentoBancarioRemoteTest {
 	@Test
 	public void processarArquivos() throws Exception {
 
-		Properties properties =
-				new Properties();
+		Properties properties = new Properties();
 
-		properties.put(
-				Context.INITIAL_CONTEXT_FACTORY,
-				"org.jboss.naming.remote.client.InitialContextFactory");
+		properties.put(Context.INITIAL_CONTEXT_FACTORY, "org.jboss.naming.remote.client.InitialContextFactory");
+		properties.put(Context.PROVIDER_URL, "remote://localhost:4447");
+		properties.put("jboss.naming.client.ejb.context", true);
+		Context context = new InitialContext(properties);
+		String jndi = "movbancario/MovimentoBancarioBean!" + MovimentoBancarioRemote.class.getName();
+		System.out.println("Lookup JNDI: " + jndi);
 
-		properties.put(
-				Context.PROVIDER_URL,
-				"http-remoting://localhost:8080");
-
-		/*
-		 * Caso ambiente protegido:
-		 */
-		// properties.put(
-		//         Context.SECURITY_PRINCIPAL,
-		//         "admin");
-
-		// properties.put(
-		//         Context.SECURITY_CREDENTIALS,
-		//         "root");
-
-		properties.put(
-				"jboss.naming.client.ejb.context",
-				true);
-
-		Context context =
-				new InitialContext(properties);
-
-		String jndi =
-				"ejb:/movbancarioauto//MovimentoBancarioBean!"
-				+ "br.gov.pb.sefin.atf.arr.carga.movbancarioauto.model.bean.MovimentoBancarioRemote";
-
-		System.out.println(
-				"JNDI: " + jndi);
-
-		MovimentoBancarioRemote service =
-				(MovimentoBancarioRemote)
-						context.lookup(jndi);
+		MovimentoBancarioRemote service = (MovimentoBancarioRemote) context.lookup(jndi);
 
 		assertNotNull(service);
 
 		service.processarArquivos();
 
-		System.out.println(
-				"EJB remoto executado com sucesso.");
+		System.out.println("EJB remoto executado com sucesso.");
 
 	}
 
