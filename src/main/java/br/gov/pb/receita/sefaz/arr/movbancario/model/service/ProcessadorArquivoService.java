@@ -60,9 +60,27 @@ public class ProcessadorArquivoService {
 	 */
 	public void processar(RegistroCnab entrada) throws Exception {
 
-		log.infof("Iniciando processamento arquivo: %s", entrada.getDocumento());
+		log.infof(
+				"Iniciando processamento arquivo=%s",
+				entrada.getDocumento());
 
-		final File arquivo = new File(entrada.getCaminhoArquivo());
+		final File arquivo =
+				new File(
+						entrada.getCaminhoArquivo());
+
+		/*
+		 * Impede reprocessamento.
+		 */
+		if (!redisRepository.registrarArquivo(
+				arquivo.getName())) {
+
+			log.warnf(
+					"Arquivo já processado ou em processamento: %s",
+					arquivo.getName());
+
+			return;
+
+		}
 
 		/*
 		 * ETAPA 01
@@ -92,60 +110,75 @@ public class ProcessadorArquivoService {
 	 */
 	private void processarCargaRedis(File arquivo) throws Exception {
 
-		final List<String> blocoRedis = new ArrayList<>();
+		final List<String> blocoRedis =
+				new ArrayList<>();
 
-		LeitorArquivoStream.processar(arquivo, (linha, numeroLinha) -> {
+		LeitorArquivoStream.processar(
+				arquivo,
+				(linha, numeroLinha) -> {
 
-			try {
+					try {
 
-				/*
-				 * Ignora header.
-				 */
-				if (numeroLinha == 1) {
+						/*
+						 * Ignora header.
+						 */
+						if (numeroLinha == 1) {
 
-					blocoRedis.add(linha);
+							blocoRedis.add(linha);
 
-					return;
+							return;
 
-				}
+						}
 
-				/*
-				 * Validação antecipada.
-				 */
-				validador.validar(linha, numeroLinha);
+						/*
+						 * Validação antecipada.
+						 */
+						validador.validar(
+								linha,
+								numeroLinha);
 
-				/*
-				 * Adiciona válidos.
-				 */
-				blocoRedis.add(linha);
+						/*
+						 * Adiciona válidos.
+						 */
+						blocoRedis.add(linha);
 
-				/*
-				 * Persistência batch Redis.
-				 */
-				if (blocoRedis.size() >= BATCH_SIZE) {
+						/*
+						 * Persistência batch Redis.
+						 */
+						if (blocoRedis.size() >= BATCH_SIZE) {
 
-					persistirBlocoRedis(arquivo, blocoRedis);
+							persistirBlocoRedis(
+									arquivo,
+									blocoRedis);
 
-				}
+						}
 
-			} catch (Exception e) {
+					} catch (Exception e) {
 
-				processarRegistroInvalido(arquivo, linha, numeroLinha, e);
+						processarRegistroInvalido(
+								arquivo,
+								linha,
+								numeroLinha,
+								e);
 
-			}
+					}
 
-		});
+				});
 
 		/*
 		 * Persistência saldo final.
 		 */
 		if (!blocoRedis.isEmpty()) {
 
-			persistirBlocoRedis(arquivo, blocoRedis);
+			persistirBlocoRedis(
+					arquivo,
+					blocoRedis);
 
 		}
 
-		log.infof("Carga Redis finalizada: %s", arquivo.getName());
+		log.infof(
+				"Carga Redis finalizada: %s",
+				arquivo.getName());
 
 	}
 
@@ -164,7 +197,11 @@ public class ProcessadorArquivoService {
 
 		while (true) {
 
-			final List<String> linhas = redisRepository.obterBlocoValido(arquivo.getName(), bloco, BATCH_SIZE);
+			final List<String> linhas =
+					redisRepository.obterBlocoValido(
+							arquivo.getName(),
+							bloco,
+							BATCH_SIZE);
 
 			/*
 			 * Finaliza processamento.
@@ -175,14 +212,20 @@ public class ProcessadorArquivoService {
 
 			}
 
-			final List<RegistroCnab> lote = transformarLote(linhas, bloco);
+			final List<RegistroCnab> lote =
+					transformarLote(
+							linhas,
+							bloco);
 
 			/*
 			 * Persistência JDBC batch.
 			 */
 			repository.salvarLote(lote);
 
-			log.infof("Bloco persistido banco. bloco=%d registros=%d", bloco, lote.size());
+			log.infof(
+					"Bloco persistido banco. bloco=%d registros=%d",
+					bloco,
+					lote.size());
 
 			bloco++;
 
@@ -193,11 +236,16 @@ public class ProcessadorArquivoService {
 	/**
 	 * Transforma linhas em DTO.
 	 */
-	private List<RegistroCnab> transformarLote(List<String> linhas, long bloco) throws Exception {
+	private List<RegistroCnab> transformarLote(
+			List<String> linhas,
+			long bloco)
+			throws Exception {
 
-		final List<RegistroCnab> lote = new ArrayList<>();
+		final List<RegistroCnab> lote =
+				new ArrayList<>();
 
-		long numeroLinha = (bloco * BATCH_SIZE);
+		long numeroLinha =
+				(bloco * BATCH_SIZE);
 
 		for (String linha : linhas) {
 
@@ -212,7 +260,10 @@ public class ProcessadorArquivoService {
 
 			}
 
-			final RegistroCnab registro = transformador.transformar(linha, numeroLinha);
+			final RegistroCnab registro =
+					transformador.transformar(
+							linha,
+							numeroLinha);
 
 			lote.add(registro);
 
@@ -225,11 +276,18 @@ public class ProcessadorArquivoService {
 	/**
 	 * Persistência bloco Redis.
 	 */
-	private void persistirBlocoRedis(File arquivo, List<String> blocoRedis) throws Exception {
+	private void persistirBlocoRedis(
+			File arquivo,
+			List<String> blocoRedis)
+			throws Exception {
 
-		redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
+		redisRepository.salvarBlocoValido(
+				arquivo.getName(),
+				blocoRedis);
 
-		log.infof("Bloco Redis persistido. registros=%d", blocoRedis.size());
+		log.infof(
+				"Bloco Redis persistido. registros=%d",
+				blocoRedis.size());
 
 		blocoRedis.clear();
 
@@ -245,15 +303,20 @@ public class ProcessadorArquivoService {
 			Exception e)
 			throws Exception {
 
-		final List<String> invalidos = new ArrayList<>();
+		final List<String> invalidos =
+				new ArrayList<>();
 
-		invalidos.add(linha + "|ERRO=" + e.getMessage());
+		invalidos.add(
+				linha + "|ERRO=" + e.getMessage());
 
 		redisRepository.salvarBlocoInvalido(
 				arquivo.getName(),
 				invalidos);
 
-		log.errorf(e, "Registro inválido. linha=%d", numeroLinha);
+		log.errorf(
+				e,
+				"Registro inválido. linha=%d",
+				numeroLinha);
 
 	}
 
@@ -267,7 +330,9 @@ public class ProcessadorArquivoService {
 	private void finalizarProcessamento(
 			File arquivo) {
 
-		log.infof("Processamento finalizado: %s", arquivo.getName());
+		log.infof(
+				"Processamento finalizado: %s",
+				arquivo.getName());
 
 	}
 

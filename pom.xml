@@ -154,70 +154,37 @@
 			<version>2.2</version>
 			<scope>provided</scope>
 		</dependency>
-				
-		<dependency>
-		    <groupId>org.jboss</groupId>
-		    <artifactId>jboss-ejb-client</artifactId>
-		    <version>1.0.23.Final-redhat-1</version>
-		    <scope>test</scope>
-		</dependency>
-		
-		<dependency>
-		    <groupId>org.jboss</groupId>
-		    <artifactId>jboss-remote-naming</artifactId>
-		    <version>1.0.7.Final-redhat-1</version>
-		    <scope>test</scope>
-		</dependency>		
 
 	</dependencies>
 
 	<build>
-
 		<finalName>movbancario</finalName>
-
 		<plugins>
 
 			<!-- ============================= -->
 			<!-- Adiciona source extra -->
 			<!-- ============================= -->
 			<plugin>
-
 				<groupId>org.codehaus.mojo</groupId>
-
 				<artifactId>build-helper-maven-plugin</artifactId>
-
 				<version>3.0.0</version>
-
 				<executions>
-
 					<execution>
-
 						<id>add-source</id>
-
 						<phase>generate-sources</phase>
-
 						<goals>
 							<goal>add-source</goal>
 						</goals>
-
 						<configuration>
-
 							<sources>
-
 								<source>
 									src/util/java
 								</source>
-
 							</sources>
-
 						</configuration>
-
 					</execution>
-
 				</executions>
-
 			</plugin>
-
 			<!-- ============================= -->
 			<!-- Compiler Java 8 -->
 			<!-- ============================= -->
@@ -231,7 +198,6 @@
 					<encoding>${project.build.sourceEncoding}</encoding>
 				</configuration>
 			</plugin>
-
 			<!-- ============================= -->
 			<!-- WAR Plugin -->
 			<!-- ============================= -->
@@ -244,8 +210,6 @@
 					<warName>movbancario</warName>
 				</configuration>
 			</plugin>
-
 		</plugins>
-
 	</build>
 </project>

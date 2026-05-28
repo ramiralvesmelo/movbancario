@@ -475,6 +475,24 @@ public class MovimentoBancarioRedisRepository {
 		}
 
 	}
+	
+	public boolean registrarArquivo(
+	        String nomeArquivo)
+	        throws Exception {
+
+	    try (Jedis jedis =
+	                 jedisPool.getResource()) {
+
+	        return jedis.setnx(
+	                "movbancario:arquivo:"
+	                        + nomeArquivo,
+	                String.valueOf(
+	                        System.currentTimeMillis()))
+	                == 1;
+
+	    }
+
+	}	
 
 	@PreDestroy
 	public void destroy() {

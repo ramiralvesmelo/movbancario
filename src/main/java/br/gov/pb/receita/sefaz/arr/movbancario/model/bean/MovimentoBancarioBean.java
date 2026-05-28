@@ -152,6 +152,9 @@ public class MovimentoBancarioBean implements MovimentoBancarioRemote {
 				 * Caminho físico.
 				 */
 				registro.setCaminhoArquivo(arquivo.getAbsolutePath());
+				log.infof(
+				        "ENVIANDO JMS arquivo=%s",
+				        arquivo.getName());				
 				
 				producerJms.enviar(registro);
 
