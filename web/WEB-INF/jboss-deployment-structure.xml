@@ -4,9 +4,7 @@
     <deployment>
 
         <dependencies>        	 
-        	<!-- 
-            <module name="br.gov.pb.receita.app.util" services="import"/>
-             -->
+             <module name="br.gov.pb.receita.app.util" services="import"/> 
         </dependencies>
 
         <exclusions>
