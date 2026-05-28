@@ -1,102 +1,99 @@
-package br.gov.pb.receita.sefaz.arr.movbancario.service;
+package br.gov.pb.receita.sefaz.arr.movbancario.model.service;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.ejb.EJB;
 import javax.ejb.Stateless;
-import javax.ejb.TransactionAttribute;
-import javax.ejb.TransactionAttributeType;
+import javax.inject.Inject;
 
-import org.jboss.logging.Logger;
-
-import br.gov.pb.receita.sefaz.arr.movbancario.dto.RegistroCnab;
-import br.gov.pb.receita.sefaz.arr.movbancario.repository.MovimentoBancarioH2Repository;
-import br.gov.pb.receita.sefaz.arr.movbancario.repository.MovimentoBancarioRedisRepository;
-import br.gov.pb.receita.sefaz.arr.movbancario.transformador.TransformadorCnab240;
-import br.gov.pb.receita.sefaz.arr.movbancario.validador.ValidadorCnab240;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.entity.RegistroCnab;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.repository.MovimentoBancarioH2Repository;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.repository.MovimentoBancarioRedisRepository;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.transformador.TransformadorCnab240;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.validador.ValidadorCnab240;
 import br.gov.pb.receita.sefaz.util.io.leitor.LeitorArquivoStream;
+import lombok.extern.jbosslog.JBossLog;
 
 /**
- * Serviço responsável pelo processamento
- * streaming dos arquivos CNAB do
- * movimento bancário.
+ * Serviço responsável pelo processamento streaming
+ * dos arquivos CNAB do movimento bancário.
  *
- * Fluxo operacional:
+ * Fluxo:
  *
- * Agendador
- *      ↓
- * Controle execução única
- *      ↓
- * Leitura streaming
- *      ↓
- * Validação layout
- *      ↓
- * Persistência temporária Redis
- *      ↓
- * Recuperação batch Redis
- *      ↓
- * Transformação DTO
- *      ↓
- * Persistência JDBC batch
- *      ↓
- * Finalização
- *
- * Estratégia operacional:
- *
- * - processamento streaming
- * - baixo consumo memória
- * - fail-fast registros inválidos
+ * ETAPA 01
+ * - leitura streaming
+ * - validação CNAB
  * - persistência temporária Redis
- * - processamento batch JDBC
- * - rastreabilidade operacional
- * - preservação ordem CNAB
- * - tolerância falhas
  *
- * Benefícios:
+ * ETAPA 02
+ * - recuperação batch Redis
+ * - transformação DTO
  *
- * - desacoplamento leitura/persistência
- * - melhoria throughput ETL
- * - reprocessamento controlado
- * - observabilidade operacional
- * - redução consumo heap JVM
+ * ETAPA 03
+ * - persistência JDBC batch
+ *
+ * ETAPA 04
+ * - finalização processamento
  */
 @Stateless
+@JBossLog
 public class ProcessadorArquivoService {
 
-	private static final Logger LOGGER = Logger.getLogger(ProcessadorArquivoService.class);
-
 	/*
-	 * Tamanho padrão processamento.
+	 * Quantidade registros por bloco.
 	 */
 	private static final int BATCH_SIZE = 10000;
 
-	@EJB
-	public MovimentoBancarioH2Repository repository;
+	@Inject
+	private MovimentoBancarioH2Repository repository;
 
-	@EJB
-	public MovimentoBancarioRedisRepository redisRepository;
+	@Inject
+	private MovimentoBancarioRedisRepository redisRepository;
 
 	private final ValidadorCnab240 validador = new ValidadorCnab240();
 
 	private final TransformadorCnab240 transformador = new TransformadorCnab240();
 
-	@TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
-	public void processar(File arquivo) throws Exception {
+	/**
+	 * Executa processamento completo arquivo.
+	 */
+	public void processar(RegistroCnab entrada) throws Exception {
 
-		LOGGER.infof("Iniciando processamento arquivo: %s", arquivo.getName());
+		log.infof("Iniciando processamento arquivo: %s", entrada.getDocumento());
+
+		final File arquivo = new File(entrada.getCaminhoArquivo());
 
 		/*
-		 * Bloco temporário Redis.
+		 * ETAPA 01
 		 */
+		this.processarCargaRedis(arquivo);
+
+		/*
+		 * ETAPA 02 + 03
+		 */
+		this.processarCargaBanco(arquivo);
+
+		/*
+		 * ETAPA 04
+		 */
+		this.finalizarProcessamento(arquivo);
+
+	}
+
+	/**
+	 * =====================================================================================
+	 * ETAPA 01
+	 *
+	 * leitura streaming
+	 * validação layout
+	 * persistência temporária Redis
+	 * =====================================================================================
+	 */
+	private void processarCargaRedis(File arquivo) throws Exception {
+
 		final List<String> blocoRedis = new ArrayList<>();
 
-		/**
-		 * =============================================================================================== 
-		 * ETAPA 01 - l leitura streaming + file system lock > validação CNAB > carga temporária Redis
-		 * ===============================================================================================		 
-		 */
 		LeitorArquivoStream.processar(arquivo, (linha, numeroLinha) -> {
 
 			try {
@@ -118,7 +115,7 @@ public class ProcessadorArquivoService {
 				validador.validar(linha, numeroLinha);
 
 				/*
-				 * Adiciona somente válidos.
+				 * Adiciona válidos.
 				 */
 				blocoRedis.add(linha);
 
@@ -127,58 +124,42 @@ public class ProcessadorArquivoService {
 				 */
 				if (blocoRedis.size() >= BATCH_SIZE) {
 
-					redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
-
-					LOGGER.infof("Bloco Redis persistido. registros=%d", blocoRedis.size());
-
-					blocoRedis.clear();
+					persistirBlocoRedis(arquivo, blocoRedis);
 
 				}
 
 			} catch (Exception e) {
 
-				/*
-				 * Persistência inválidos.
-				 */
-				final List<String> invalidos = new ArrayList<>();
-
-				invalidos.add(linha + "|ERRO=" + e.getMessage());
-
-				redisRepository.salvarBlocoInvalido(arquivo.getName(), invalidos);
-
-				LOGGER.errorf(e, "Registro inválido. linha=%d", numeroLinha);
+				processarRegistroInvalido(arquivo, linha, numeroLinha, e);
 
 			}
 
 		});
 
 		/*
-		 * Saldo final Redis.
+		 * Persistência saldo final.
 		 */
 		if (!blocoRedis.isEmpty()) {
 
-			try {
-
-				redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
-
-				LOGGER.infof("Saldo final Redis persistido. registros=%d", blocoRedis.size());
-
-			} finally {
-
-				blocoRedis.clear();
-
-			}
+			persistirBlocoRedis(arquivo, blocoRedis);
 
 		}
 
-		LOGGER.infof("Carga Redis finalizada: %s", arquivo.getName());
+		log.infof("Carga Redis finalizada: %s", arquivo.getName());
 
-		/**
-		 * =============================================================================================== 
-		 * ETAPA 02 - Extração Redis > transformação DTO 
-		 * ===============================================================================================		 
-		 *  
-		 */
+	}
+
+	/**
+	 * =====================================================================================
+	 * ETAPA 02 + 03
+	 *
+	 * leitura Redis
+	 * transformação DTO
+	 * persistência JDBC batch
+	 * =====================================================================================
+	 */
+	private void processarCargaBanco(File arquivo) throws Exception {
+
 		long bloco = 0;
 
 		while (true) {
@@ -194,53 +175,99 @@ public class ProcessadorArquivoService {
 
 			}
 
-			final List<RegistroCnab> lote = new ArrayList<>();
+			final List<RegistroCnab> lote = transformarLote(linhas, bloco);
 
-			long numeroLinha = (bloco * BATCH_SIZE);
-
-			for (String linha : linhas) {
-
-				numeroLinha++;
-
-				/*
-				 * Ignora header.
-				 */
-				if (numeroLinha == 1) {
-
-					continue;
-
-				}
-
-				/*
-				 * Transformação DTO.
-				 */
-				final RegistroCnab registro = transformador.transformar(linha, numeroLinha);
-
-				lote.add(registro);
-
-			}
-
-			/**
-			 * =============================================================================================== 
-			 *  ETAPA 03 - Persistência no banco com JDBC Batch (em bloco)
-			 * ===============================================================================================
+			/*
+			 * Persistência JDBC batch.
 			 */
 			repository.salvarLote(lote);
 
-			LOGGER.infof("Bloco persistido banco. bloco=%d registros=%d", bloco, lote.size());
+			log.infof("Bloco persistido banco. bloco=%d registros=%d", bloco, lote.size());
 
 			bloco++;
 
 		}
 
-		/**
-		 * ===============================================================================================
-		 * 	ETAPA 04 - FINALIZAÇÃO + LIMPEZA 
-		 * ===============================================================================================
-		 *
-		 * pós-processamento > limpeza recursos > finalização ETL
-		 */
-		LOGGER.infof("Processamento finalizado: %s", arquivo.getName());
+	}
+
+	/**
+	 * Transforma linhas em DTO.
+	 */
+	private List<RegistroCnab> transformarLote(List<String> linhas, long bloco) throws Exception {
+
+		final List<RegistroCnab> lote = new ArrayList<>();
+
+		long numeroLinha = (bloco * BATCH_SIZE);
+
+		for (String linha : linhas) {
+
+			numeroLinha++;
+
+			/*
+			 * Ignora header.
+			 */
+			if (numeroLinha == 1) {
+
+				continue;
+
+			}
+
+			final RegistroCnab registro = transformador.transformar(linha, numeroLinha);
+
+			lote.add(registro);
+
+		}
+
+		return lote;
+
+	}
+
+	/**
+	 * Persistência bloco Redis.
+	 */
+	private void persistirBlocoRedis(File arquivo, List<String> blocoRedis) throws Exception {
+
+		redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
+
+		log.infof("Bloco Redis persistido. registros=%d", blocoRedis.size());
+
+		blocoRedis.clear();
+
+	}
+
+	/**
+	 * Processa registros inválidos.
+	 */
+	private void processarRegistroInvalido(
+			File arquivo,
+			String linha,
+			long numeroLinha,
+			Exception e)
+			throws Exception {
+
+		final List<String> invalidos = new ArrayList<>();
+
+		invalidos.add(linha + "|ERRO=" + e.getMessage());
+
+		redisRepository.salvarBlocoInvalido(
+				arquivo.getName(),
+				invalidos);
+
+		log.errorf(e, "Registro inválido. linha=%d", numeroLinha);
+
+	}
+
+	/**
+	 * =====================================================================================
+	 * ETAPA 04
+	 *
+	 * finalização processamento
+	 * =====================================================================================
+	 */
+	private void finalizarProcessamento(
+			File arquivo) {
+
+		log.infof("Processamento finalizado: %s", arquivo.getName());
 
 	}
 

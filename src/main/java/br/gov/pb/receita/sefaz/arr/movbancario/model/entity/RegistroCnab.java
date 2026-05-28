@@ -1,44 +1,46 @@
-package br.gov.pb.receita.sefaz.arr.movbancario.dto;
+package br.gov.pb.receita.sefaz.arr.movbancario.model.entity;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 
-public class RegistroCnab {
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RegistroCnab
+        implements Serializable {
+
+    private static final long serialVersionUID =
+            1L;
+
+    /*
+     * Código banco FEBRABAN.
+     */
     private String banco;
+
+    /*
+     * Documento cliente.
+     */
     private String documento;
+
+    /*
+     * Nome cliente.
+     */
     private String nome;
+
+    /*
+     * Valor financeiro.
+     */
     private BigDecimal valor;
 
-    public String getBanco() {
-        return banco;
-    }
-
-    public void setBanco(String banco) {
-        this.banco = banco;
-    }
-
-    public String getDocumento() {
-        return documento;
-    }
-
-    public void setDocumento(String documento) {
-        this.documento = documento;
-    }
-
-    public String getNome() {
-        return nome;
-    }
-
-    public void setNome(String nome) {
-        this.nome = nome;
-    }
-
-    public BigDecimal getValor() {
-        return valor;
-    }
-
-    public void setValor(BigDecimal valor) {
-        this.valor = valor;
-    }
+    /*
+     * Caminho físico arquivo origem.
+     */
+    private String caminhoArquivo;
 
 }

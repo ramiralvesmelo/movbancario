@@ -4,8 +4,8 @@
 
 	<groupId>br.gov.pb.receita.sefaz</groupId>
 	<artifactId>movbancario</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<packaging>jar</packaging>
+	<version>1.0.0-SNAPSHOT</version>
+	<packaging>war</packaging>
 	<description>Processamento em Lote - ETL
 		Exemplos de processamento síncrono (Sync) e assíncrono (Async),
 		utilizando Redis como mecanismo de cache e controle de concorrência
@@ -19,6 +19,7 @@
 		<java.version>1.8</java.version>
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<maven.compiler.target>${java.version}</maven.compiler.target>
+		<maven.test.skip>true</maven.test.skip>
 	</properties>
 
 	<dependencies>
@@ -39,6 +40,10 @@
 					<groupId>br.gov.pb.receita.atf</groupId>
 					<artifactId>jboss-ejb3-core</artifactId>
 				</exclusion>
+				<exclusion>
+					<groupId>org.slf4j</groupId>
+					<artifactId>slf4j-api</artifactId>
+				</exclusion>				
 			</exclusions>
 		</dependency>
 
@@ -60,6 +65,12 @@
 			<groupId>redis.clients</groupId>
 			<artifactId>jedis</artifactId>
 			<version>5.1.5</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.slf4j</groupId>
+					<artifactId>slf4j-api</artifactId>
+				</exclusion>				
+			</exclusions>			
 		</dependency>
 
 		<!-- H2 Database -->
@@ -70,38 +81,164 @@
 			<scope>test</scope>
 		</dependency>
 
+		<!-- Lombok (geração de código) -->
 		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-simple</artifactId>
-			<version>1.7.36</version>
-			<scope>test</scope>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<version>1.18.34</version>
+		</dependency>
+
+		<!-- ============================= -->
+		<!-- JAVA EE 6 / EAP 6.4 -->
+		<!-- ============================= -->
+
+		<!-- API Java EE 6 -->
+		<dependency>
+			<groupId>javax</groupId>
+			<artifactId>javaee-api</artifactId>
+			<version>6.0</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- JSTL -->
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>jstl</artifactId>
+			<version>1.2</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Servlet API -->
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>servlet-api</artifactId>
+			<version>3.0-alpha-1</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- JSP API -->
+		<dependency>
+			<groupId>javax.servlet.jsp</groupId>
+			<artifactId>jsp-api</artifactId>
+			<version>2.1</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- EJB -->
+		<dependency>
+			<groupId>javax.ejb</groupId>
+			<artifactId>ejb-api</artifactId>
+			<version>3.0</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- CDI -->
+		<dependency>
+			<groupId>javax.enterprise</groupId>
+			<artifactId>cdi-api</artifactId>
+			<version>1.0-SP4</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- JAX-RS -->
+		<dependency>
+			<groupId>javax.ws.rs</groupId>
+			<artifactId>jsr311-api</artifactId>
+			<version>1.1.1</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Annotations -->
+		<dependency>
+			<groupId>javax.annotation</groupId>
+			<artifactId>jsr250-api</artifactId>
+			<version>1.0</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-pool2</artifactId>
+			<version>2.11.1</version>
 		</dependency>
 
 	</dependencies>
 
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>build-helper-maven-plugin</artifactId>
-				<version>3.0.0</version>
-				<executions>
-					<execution>
-						<id>add-source</id>
-						<phase>generate-sources</phase>
-						<goals>
-							<goal>add-source</goal>
-						</goals>
-						<configuration>
-							<sources>
-								<source>
-									src/util/java
-								</source>
-							</sources>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
-		</plugins>
-	</build>
+<build>
+
+	<finalName>movbancario</finalName>
+
+	<plugins>
+
+		<!-- ============================= -->
+		<!-- Adiciona source extra -->
+		<!-- ============================= -->
+		<plugin>
+
+			<groupId>org.codehaus.mojo</groupId>
+
+			<artifactId>build-helper-maven-plugin</artifactId>
+
+			<version>3.0.0</version>
+
+			<executions>
+
+				<execution>
+
+					<id>add-source</id>
+
+					<phase>generate-sources</phase>
+
+					<goals>
+						<goal>add-source</goal>
+					</goals>
+
+					<configuration>
+
+						<sources>
+
+							<source>
+								src/util/java
+							</source>
+
+						</sources>
+
+					</configuration>
+
+				</execution>
+
+			</executions>
+
+		</plugin>
+
+		<!-- ============================= -->
+		<!-- Compiler Java 8 -->
+		<!-- ============================= -->
+		<plugin>
+			<groupId>org.apache.maven.plugins</groupId>
+			<artifactId>maven-compiler-plugin</artifactId>
+			<version>3.8.1</version>
+			<configuration>
+				<source>${java.version}</source>
+				<target>${java.version}</target>
+				<encoding>${project.build.sourceEncoding}</encoding>
+			</configuration>
+		</plugin>
+
+		<!-- ============================= -->
+		<!-- WAR Plugin -->
+		<!-- ============================= -->
+		<plugin>
+			<groupId>org.apache.maven.plugins</groupId>
+			<artifactId>maven-war-plugin</artifactId>
+			<version>3.3.2</version>
+			<configuration>				
+				<failOnMissingWebXml>false</failOnMissingWebXml>
+				<warName>movbancario</warName>
+			</configuration>
+		</plugin>
+
+	</plugins>
+
+</build>
 </project>

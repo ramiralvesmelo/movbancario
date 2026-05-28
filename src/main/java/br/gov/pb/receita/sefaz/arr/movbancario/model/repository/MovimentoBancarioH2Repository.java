@@ -1,4 +1,4 @@
-package br.gov.pb.receita.sefaz.arr.movbancario.repository;
+package br.gov.pb.receita.sefaz.arr.movbancario.model.repository;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -10,52 +10,76 @@ import javax.ejb.TransactionAttribute;
 import javax.ejb.TransactionAttributeType;
 import javax.sql.DataSource;
 
-import org.jboss.logging.Logger;
-
-import br.gov.pb.receita.sefaz.arr.movbancario.dto.RegistroCnab;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.entity.RegistroCnab;
+import lombok.extern.jbosslog.JBossLog;
 
 @Stateless
+@JBossLog
 public class MovimentoBancarioH2Repository {
 
-	private static final Logger LOGGER = Logger.getLogger(MovimentoBancarioH2Repository.class);
-
-	private static final String SQL_INSERT = "INSERT INTO TB_MOV_BANCARIO (BANCO,DOCUMENTO,NOME,VALOR) VALUES (?, ?, ?, ?)";
+	/*
+	 * SQL persistência.
+	 */
+	private static final String SQL_INSERT = "INSERT INTO TB_MOV_BANCARIO " + "(BANCO, DOCUMENTO, NOME, VALOR) "
+			+ "VALUES (?, ?, ?, ?)";
 
 	@Resource(mappedName = "java:/jdbc/MovBancarioDS")
-	DataSource dataSource;
+	private DataSource dataSource;
 
+	/**
+	 * Persiste lote CNAB utilizando JDBC Batch.
+	 */
 	@TransactionAttribute(TransactionAttributeType.REQUIRED)
 	public void salvarLote(List<RegistroCnab> lote) throws Exception {
 
+		if (lote == null || lote.isEmpty()) {
+
+			log.warn("Lote vazio recebido para persistência");
+
+			return;
+
+		}
+
+		log.infof("Iniciando persistência lote. Quantidade registros: %d", lote.size());
+
 		try (Connection connection = dataSource.getConnection();
 
-			PreparedStatement statement = connection.prepareStatement(SQL_INSERT)) {
+				PreparedStatement statement = connection.prepareStatement(SQL_INSERT)) {
 
 			for (RegistroCnab registro : lote) {
 
-				statement.setString(1, registro.getBanco());
-
-				statement.setString(2, registro.getDocumento());
-
-				statement.setString(3, registro.getNome());
-
-				statement.setBigDecimal(4, registro.getValor());
-
-				statement.addBatch();
+				adicionarBatch(statement, registro);
 
 			}
 
-			statement.executeBatch();
+			final int[] resultado = statement.executeBatch();
 
-			LOGGER.info("Lote persistido: " + lote.size());
+			log.infof("Lote persistido com sucesso. Registros processados: %d", resultado.length);
 
 		} catch (Exception e) {
 
-			LOGGER.error("Erro ao persistir lote", e);
+			log.errorf(e, "Erro ao persistir lote. Quantidade registros: %d", lote.size());
 
 			throw e;
 
 		}
+
+	}
+
+	/**
+	 * Adiciona registro no batch JDBC.
+	 */
+	private void adicionarBatch(PreparedStatement statement, RegistroCnab registro) throws Exception {
+
+		statement.setString(1, registro.getBanco());
+
+		statement.setString(2, registro.getDocumento());
+
+		statement.setString(3, registro.getNome());
+
+		statement.setBigDecimal(4, registro.getValor());
+
+		statement.addBatch();
 
 	}
 
