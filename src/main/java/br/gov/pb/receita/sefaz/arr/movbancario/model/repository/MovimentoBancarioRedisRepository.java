@@ -19,41 +19,25 @@ import redis.clients.jedis.JedisPoolConfig;
 @JBossLog
 public class MovimentoBancarioRedisRepository {
 
+	private static final String PREFIXO_VALIDO = "movbancario:valido:";
+	private static final String PREFIXO_INVALIDO = "movbancario:invalido:";
+	private static final String PREFIXO_CONTROLE = "movbancario:controle:";
+	private static final String PREFIXO_ARQUIVO = "movbancario:arquivo:";
+
 	/*
 	 * Arquivo configuração Redis.
 	 */
-	private static final String REDIS_CONFIG =
-			"/var/atf/configuracoes/redis-conf.yaml";
-
-	/*
-	 * Prefixo registros válidos.
-	 */
-	private static final String PREFIXO_VALIDO =
-			"movbancario:valido:";
-
-	/*
-	 * Prefixo registros inválidos.
-	 */
-	private static final String PREFIXO_INVALIDO =
-			"movbancario:invalido:";
-
-	/*
-	 * Prefixo controle duplicidade.
-	 */
-	private static final String PREFIXO_CONTROLE =
-			"movbancario:controle:";
+	private static final String REDIS_CONFIG = "/var/atf/configuracoes/redis-conf.yaml";
 
 	/*
 	 * TTL padrão Redis.
 	 */
-	private static final int TTL_SEGUNDOS =
-			3600;
+	private static final int TTL_SEGUNDOS = 3600;
 
 	/*
 	 * Timeout conexão Redis.
 	 */
-	private static final int TIMEOUT =
-			10000;
+	private static final int TIMEOUT = 10000;
 
 	/*
 	 * Pool conexões Redis.
@@ -65,100 +49,67 @@ public class MovimentoBancarioRedisRepository {
 
 		try {
 
-			log.infof(
-					"Inicializando Redis. config=%s",
-					REDIS_CONFIG);
+			log.infof("Inicializando Redis. config=%s", REDIS_CONFIG);
 
 			/*
 			 * Carrega YAML.
 			 */
-			Map<String, Object> dados =
-					YamlUtils.load(REDIS_CONFIG);
+			Map<String, Object> dados = YamlUtils.load(REDIS_CONFIG);
 
 			@SuppressWarnings("unchecked")
-			Map<String, Object> singleServer =
-					(Map<String, Object>) dados.get("singleServerConfig");
+			Map<String, Object> singleServer = (Map<String, Object>) dados.get("singleServerConfig");
 
 			/*
 			 * Exemplo YAML:
 			 *
-			 * address:
-			 *   - "//10.10.253.79:6379"
+			 * address: - "//10.10.253.79:6379"
 			 */
 			@SuppressWarnings("unchecked")
-			List<String> addresses =
-					(List<String>) singleServer.get("address");
+			List<String> addresses = (List<String>) singleServer.get("address");
 
-			if (addresses == null
-					|| addresses.isEmpty()) {
+			if (addresses == null || addresses.isEmpty()) {
 
-				throw new IllegalStateException(
-						"Endereco Redis nao configurado.");
+				throw new IllegalStateException("Endereco Redis nao configurado.");
 
 			}
 
 			/*
 			 * Primeiro endereço configurado.
 			 */
-			String address =
-					addresses.get(0);
+			String address = addresses.get(0);
 
 			/*
 			 * Remove prefixos.
 			 */
-			address =
-					address
-							.replace("redis://", "")
-							.replace("rediss://", "")
-							.replace("//", "")
-							.trim();
+			address = address.replace("redis://", "").replace("rediss://", "").replace("//", "").trim();
 
 			/*
 			 * host:porta
 			 */
-			String[] hostPort =
-					address.split(":");
+			String[] hostPort = address.split(":");
 
 			if (hostPort.length != 2) {
 
-				throw new IllegalStateException(
-						"Endereco Redis invalido: "
-								+ address);
+				throw new IllegalStateException("Endereco Redis invalido: " + address);
 
 			}
 
-			String host =
-					hostPort[0];
+			String host = hostPort[0];
 
-			int port =
-					Integer.parseInt(
-							hostPort[1]);
+			int port = Integer.parseInt(hostPort[1]);
 
-			int database =
-					Integer.parseInt(
-							String.valueOf(
-									singleServer.get("database")));
+			int database = Integer.parseInt(String.valueOf(singleServer.get("database")));
 
-			int maxPool =
-					Integer.parseInt(
-							String.valueOf(
-									singleServer.get("connectionPoolSize")));
+			int maxPool = Integer.parseInt(String.valueOf(singleServer.get("connectionPoolSize")));
 
-			String password =
-					String.valueOf(
-							singleServer.get("password"));
+			String password = String.valueOf(singleServer.get("password"));
 
-			log.infof(
-					"Configuracao Redis carregada. host=%s port=%d database=%d",
-					host,
-					port,
-					database);
+			log.infof("Configuracao Redis carregada. host=%s port=%d database=%d", host, port, database);
 
 			/*
 			 * Configuração pool Jedis.
 			 */
-			JedisPoolConfig poolConfig =
-					new JedisPoolConfig();
+			JedisPoolConfig poolConfig = new JedisPoolConfig();
 
 			poolConfig.setMaxTotal(maxPool);
 
@@ -175,43 +126,21 @@ public class MovimentoBancarioRedisRepository {
 			/*
 			 * Inicializa pool Redis.
 			 */
-			if (password != null
-					&& !"null".equals(password)
-					&& !password.trim().isEmpty()) {
+			if (password != null && !"null".equals(password) && !password.trim().isEmpty()) {
 
-				jedisPool =
-						new JedisPool(
-								poolConfig,
-								host,
-								port,
-								TIMEOUT,
-								password,
-								database);
+				jedisPool = new JedisPool(poolConfig, host, port, TIMEOUT, password, database);
 
 			} else {
 
-				jedisPool =
-						new JedisPool(
-								poolConfig,
-								host,
-								port,
-								TIMEOUT,
-								null,
-								database);
+				jedisPool = new JedisPool(poolConfig, host, port, TIMEOUT, null, database);
 
 			}
 
-			log.infof(
-					"Redis inicializado com sucesso. host=%s port=%d database=%d",
-					host,
-					port,
-					database);
+			log.infof("Redis inicializado com sucesso. host=%s port=%d database=%d", host, port, database);
 
 		} catch (Exception e) {
 
-			log.error(
-					"Erro ao inicializar Redis",
-					e);
+			log.error("Erro ao inicializar Redis", e);
 
 			throw new RuntimeException(e);
 
@@ -222,55 +151,35 @@ public class MovimentoBancarioRedisRepository {
 	/*
 	 * Persiste bloco válido Redis.
 	 */
-	public void salvarBlocoValido(
-			String nomeArquivo,
-			List<String> linhas)
-			throws Exception {
+	public void salvarBlocoValido(String nomeArquivo, List<String> linhas) throws Exception {
 
-		salvarBloco(
-				montarChaveValida(nomeArquivo),
-				montarChaveControle(nomeArquivo),
-				linhas);
+		salvarBloco(montarChaveValida(nomeArquivo), montarChaveControle(nomeArquivo), linhas);
 
 	}
 
 	/*
 	 * Persiste bloco inválido Redis.
 	 */
-	public void salvarBlocoInvalido(
-			String nomeArquivo,
-			List<String> linhas)
-			throws Exception {
+	public void salvarBlocoInvalido(String nomeArquivo, List<String> linhas) throws Exception {
 
-		salvarBloco(
-				montarChaveInvalida(nomeArquivo),
-				montarChaveControle(nomeArquivo),
-				linhas);
+		salvarBloco(montarChaveInvalida(nomeArquivo), montarChaveControle(nomeArquivo), linhas);
 
 	}
 
 	/*
 	 * Persiste bloco Redis sem duplicidade.
 	 */
-	private void salvarBloco(
-			String chaveLista,
-			String chaveControle,
-			List<String> linhas)
-			throws Exception {
+	private void salvarBloco(String chaveLista, String chaveControle, List<String> linhas) throws Exception {
 
-		if (linhas == null
-				|| linhas.isEmpty()) {
+		if (linhas == null || linhas.isEmpty()) {
 
-			log.warnf(
-					"Bloco vazio ignorado. chave=%s",
-					chaveLista);
+			log.warnf("Bloco vazio ignorado. chave=%s", chaveLista);
 
 			return;
 
 		}
 
-		try (Jedis jedis =
-					 jedisPool.getResource()) {
+		try (Jedis jedis = jedisPool.getResource()) {
 
 			long adicionados = 0;
 
@@ -279,22 +188,16 @@ public class MovimentoBancarioRedisRepository {
 				/*
 				 * SADD:
 				 *
-				 * 1 = adicionou
-				 * 0 = duplicado
+				 * 1 = adicionou 0 = duplicado
 				 */
-				Long added =
-						jedis.sadd(
-								chaveControle,
-								linha);
+				Long added = jedis.sadd(chaveControle, linha);
 
 				/*
 				 * Ignora duplicados.
 				 */
 				if (added == 0) {
 
-					log.warnf(
-							"Registro duplicado ignorado. chave=%s",
-							chaveControle);
+					log.warnf("Registro duplicado ignorado. chave=%s", chaveControle);
 
 					continue;
 
@@ -303,9 +206,7 @@ public class MovimentoBancarioRedisRepository {
 				/*
 				 * Mantém ordem arquivo.
 				 */
-				jedis.rpush(
-						chaveLista,
-						linha);
+				jedis.rpush(chaveLista, linha);
 
 				adicionados++;
 
@@ -314,26 +215,16 @@ public class MovimentoBancarioRedisRepository {
 			/*
 			 * Expiração chaves.
 			 */
-			jedis.expire(
-					chaveLista,
-					TTL_SEGUNDOS);
+			jedis.expire(chaveLista, TTL_SEGUNDOS);
 
-			jedis.expire(
-					chaveControle,
-					TTL_SEGUNDOS);
+			jedis.expire(chaveControle, TTL_SEGUNDOS);
 
-			log.infof(
-					"Bloco Redis persistido. chave=%s adicionados=%d recebidos=%d",
-					chaveLista,
-					adicionados,
+			log.infof("Bloco Redis persistido. chave=%s adicionados=%d recebidos=%d", chaveLista, adicionados,
 					linhas.size());
 
 		} catch (Exception e) {
 
-			log.errorf(
-					e,
-					"Erro ao salvar bloco Redis. chave=%s",
-					chaveLista);
+			log.errorf(e, "Erro ao salvar bloco Redis. chave=%s", chaveLista);
 
 			throw e;
 
@@ -344,73 +235,41 @@ public class MovimentoBancarioRedisRepository {
 	/*
 	 * Recupera bloco válido Redis.
 	 */
-	public List<String> obterBlocoValido(
-			String nomeArquivo,
-			long bloco,
-			long tamanhoBloco)
-			throws Exception {
+	public List<String> obterBlocoValido(String nomeArquivo, long bloco, long tamanhoBloco) throws Exception {
 
-		return obterBloco(
-				montarChaveValida(nomeArquivo),
-				bloco,
-				tamanhoBloco);
+		return obterBloco(montarChaveValida(nomeArquivo), bloco, tamanhoBloco);
 
 	}
 
 	/*
 	 * Recupera bloco inválido Redis.
 	 */
-	public List<String> obterBlocoInvalido(
-			String nomeArquivo,
-			long bloco,
-			long tamanhoBloco)
-			throws Exception {
+	public List<String> obterBlocoInvalido(String nomeArquivo, long bloco, long tamanhoBloco) throws Exception {
 
-		return obterBloco(
-				montarChaveInvalida(nomeArquivo),
-				bloco,
-				tamanhoBloco);
+		return obterBloco(montarChaveInvalida(nomeArquivo), bloco, tamanhoBloco);
 
 	}
 
 	/*
 	 * Recupera bloco Redis.
 	 */
-	private List<String> obterBloco(
-			String chave,
-			long bloco,
-			long tamanhoBloco)
-			throws Exception {
+	private List<String> obterBloco(String chave, long bloco, long tamanhoBloco) throws Exception {
 
-		long inicio =
-				bloco * tamanhoBloco;
+		long inicio = bloco * tamanhoBloco;
 
-		long fim =
-				inicio + tamanhoBloco - 1;
+		long fim = inicio + tamanhoBloco - 1;
 
-		try (Jedis jedis =
-					 jedisPool.getResource()) {
+		try (Jedis jedis = jedisPool.getResource()) {
 
-			List<String> linhas =
-					jedis.lrange(
-							chave,
-							inicio,
-							fim);
+			List<String> linhas = jedis.lrange(chave, inicio, fim);
 
-			log.infof(
-					"Bloco Redis recuperado. chave=%s bloco=%d quantidade=%d",
-					chave,
-					bloco,
-					linhas.size());
+			log.infof("Bloco Redis recuperado. chave=%s bloco=%d quantidade=%d", chave, bloco, linhas.size());
 
 			return new ArrayList<>(linhas);
 
 		} catch (Exception e) {
 
-			log.errorf(
-					e,
-					"Erro ao recuperar bloco Redis. chave=%s",
-					chave);
+			log.errorf(e, "Erro ao recuperar bloco Redis. chave=%s", chave);
 
 			throw e;
 
@@ -421,108 +280,98 @@ public class MovimentoBancarioRedisRepository {
 	/*
 	 * Remove registros válidos.
 	 */
-	public void removerArquivoValido(
-			String nomeArquivo)
-			throws Exception {
+	public void removerArquivoValido(String nomeArquivo) throws Exception {
 
-		removerArquivo(
-				montarChaveValida(nomeArquivo));
+		removerArquivo(montarChaveValida(nomeArquivo));
 
-		removerArquivo(
-				montarChaveControle(nomeArquivo));
+		removerArquivo(montarChaveControle(nomeArquivo));
+
+		removerArquivo(montarChaveArquivo(nomeArquivo));
 
 	}
 
 	/*
 	 * Remove registros inválidos.
 	 */
-	public void removerArquivoInvalido(
-			String nomeArquivo)
-			throws Exception {
+	public void removerArquivoInvalido(String nomeArquivo) throws Exception {
 
-		removerArquivo(
-				montarChaveInvalida(nomeArquivo));
+		removerArquivo(montarChaveInvalida(nomeArquivo));
 
 	}
 
 	/*
 	 * Remove chave Redis.
 	 */
-	private void removerArquivo(
-			String chave)
-			throws Exception {
+	private void removerArquivo(String chave) throws Exception {
 
-		try (Jedis jedis =
-					 jedisPool.getResource()) {
+		try (Jedis jedis = jedisPool.getResource()) {
 
-			long removidos =
-					jedis.del(chave);
+			long removidos = jedis.del(chave);
 
-			log.infof(
-					"Arquivo Redis removido. chave=%s removidos=%d",
-					chave,
-					removidos);
+			log.infof("Arquivo Redis removido. chave=%s removidos=%d", chave, removidos);
 
 		} catch (Exception e) {
 
-			log.errorf(
-					e,
-					"Erro ao remover arquivo Redis. chave=%s",
-					chave);
+			log.errorf(e, "Erro ao remover arquivo Redis. chave=%s", chave);
 
 			throw e;
 
 		}
 
 	}
-	
-	public boolean registrarArquivo(
-	        String nomeArquivo)
-	        throws Exception {
 
-	    try (Jedis jedis =
-	                 jedisPool.getResource()) {
+	public boolean registrarArquivo(String nomeArquivo) throws Exception {
 
-	        return jedis.setnx(
-	                "movbancario:arquivo:"
-	                        + nomeArquivo,
-	                String.valueOf(
-	                        System.currentTimeMillis()))
-	                == 1;
+		try (Jedis jedis = jedisPool.getResource()) {
 
-	    }
+			Long added = jedis.setnx(montarChaveArquivo(nomeArquivo), String.valueOf(System.currentTimeMillis()));
 
-	}	
+			return added == 1;
+
+		}
+
+	}
+
+	public boolean arquivoJaProcessado(String nomeArquivo) throws Exception {
+
+		try (Jedis jedis = jedisPool.getResource()) {
+
+			return jedis.exists(montarChaveArquivo(nomeArquivo));
+
+		}
+
+	}
+
+	private String montarChaveArquivo(String nomeArquivo) {
+
+		return PREFIXO_ARQUIVO + nomeArquivo;
+
+	}
 
 	@PreDestroy
 	public void destroy() {
 
-		log.info(
-				"Finalizando pool Redis.");
+		log.info("Finalizando pool Redis.");
 
 		JdbcUtils.close(jedisPool);
 
-		log.info(
-				"Pool Redis finalizado.");
+		log.info("Pool Redis finalizado.");
 
 	}
 
-	private String montarChaveValida(
-			String nomeArquivo) {
+	private String montarChaveValida(String nomeArquivo) {
 
 		return PREFIXO_VALIDO + nomeArquivo;
 
 	}
 
-	private String montarChaveInvalida(
-			String nomeArquivo) {
+	private String montarChaveInvalida(String nomeArquivo) {
 
 		return PREFIXO_INVALIDO + nomeArquivo;
 
 	}
 
-	private String montarChaveControle(
-			String nomeArquivo) {
+	private String montarChaveControle(String nomeArquivo) {
 
 		return PREFIXO_CONTROLE + nomeArquivo;
 
