@@ -6,6 +6,7 @@ import java.io.FileReader;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 
 import lombok.extern.jbosslog.JBossLog;
 
@@ -21,8 +22,9 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= PROCESSAMENTO
-	 * STREAM =========================================================
+	 * ========================================================= 
+	 * PROCESSAMENTO STREAM 
+	 * =========================================================
 	 *
 	 * Lê o arquivo linha por linha utilizando stream, delegando o processamento
 	 * para implementação recebida.
@@ -47,34 +49,152 @@ public final class LeitorArquivoStream {
 
 		try (RandomAccessFile raf = new RandomAccessFile(arquivoLock, "rw");
 
-				FileChannel channel = raf.getChannel();
+		        FileChannel channel = raf.getChannel();
 
-				FileLock lock = channel.tryLock();
+		        BufferedReader reader = new BufferedReader(new FileReader(arquivo))) {
 
-				BufferedReader reader = new BufferedReader(new FileReader(arquivo))) {
+		    FileLock lock = null;
 
-			validarLock(lock, arquivo);
+		    try {
 
-			processarLinhas(reader, processador, arquivo);
+		        lock = channel.tryLock();
 
-		} catch (Exception e) {
+		    } catch (OverlappingFileLockException e) {
 
-			log.errorf(e, "Erro ao processar arquivo=%s", arquivo.getAbsolutePath());
+		        log.warnf(
+		                "Arquivo já está sendo processado por outra thread: %s",
+		                arquivo.getName());
 
-			throw e;
+		        return;
 
-		} finally {
+		    }
 
-			removerArquivoLock(arquivoLock);
+		    validarLock(lock, arquivo);
 
-			log.infof("Encerrado processamento arquivo=%s", arquivo.getAbsolutePath());
+		    processarLinhas(
+		            reader,
+		            processador,
+		            arquivo);
 
 		}
 
 	}
 
 	/**
-	 * ========================================================= VALIDAÇÕES
+	 * ========================================================= 
+	 * LIMPEZA LOCKS
+	 * =========================================================
+	 *
+	 * Remove todos os arquivos:
+	 *
+	 * *.lock
+	 *
+	 * existentes em um diretório.
+	 */
+	public static void removerLocks(File diretorio) {
+
+		if (diretorio == null) {
+
+			throw new IllegalArgumentException("Diretorio nao informado.");
+
+		}
+
+		if (!diretorio.exists()) {
+
+			return;
+
+		}
+
+		if (!diretorio.isDirectory()) {
+
+			return;
+
+		}
+
+		File[] locks = diretorio.listFiles(file -> file.isFile() && file.getName().endsWith(".lock"));
+
+		if (locks == null || locks.length == 0) {
+
+			log.infof("Nenhum lock encontrado diretorio=%s", diretorio.getAbsolutePath());
+
+			return;
+
+		}
+
+		for (File lock : locks) {
+
+			try {
+
+				if (lock.delete()) {
+
+					log.infof("Lock removido=%s", lock.getAbsolutePath());
+
+				} else {
+
+					log.warnf("Nao foi possivel remover lock=%s", lock.getAbsolutePath());
+
+				}
+
+			} catch (Exception e) {
+
+				log.errorf(e, "Erro removendo lock=%s", lock.getAbsolutePath());
+
+			}
+
+		}
+
+	}
+
+	/**
+	 * ========================================================= 
+	 * LIMPEZA LOCKS TXT 
+	 * =========================================================
+	 *
+	 * Remove apenas locks associados aos arquivos TXT encontrados.
+	 */
+	public static void removerLocksTxt(File diretorio) {
+
+		if (diretorio == null || !diretorio.exists() || !diretorio.isDirectory()) {
+
+			return;
+
+		}
+
+		File[] arquivos = diretorio.listFiles(file -> file.isFile() && file.getName().toLowerCase().endsWith(".txt"));
+
+		if (arquivos == null) {
+
+			return;
+
+		}
+
+		for (File arquivo : arquivos) {
+
+			File lock = new File(arquivo.getAbsolutePath() + ".lock");
+
+			if (!lock.exists()) {
+
+				continue;
+
+			}
+
+			if (lock.delete()) {
+
+				log.infof("Lock removido arquivo=%s", arquivo.getName());
+
+			} else {
+
+				log.warnf("Nao foi possivel remover lock arquivo=%s", arquivo.getName());
+
+			}
+
+		}
+
+	}
+
+	/**
+	 * ========================================================= 
+	 * VALIDAÇÕES
 	 * =========================================================
 	 */
 
@@ -117,7 +237,8 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= LOCK
+	 * ========================================================= 
+	 * LOCK
 	 * =========================================================
 	 */
 
@@ -141,26 +262,9 @@ public final class LeitorArquivoStream {
 
 	}
 
-	private static void removerArquivoLock(File arquivoLock) {
-
-		if (!arquivoLock.exists()) {
-
-			return;
-
-		}
-
-		log.debugf("Removendo arquivo lock=%s", arquivoLock.getAbsolutePath());
-
-		if (!arquivoLock.delete()) {
-
-			log.warnf("Não foi possível remover arquivo lock=%s", arquivoLock.getAbsolutePath());
-
-		}
-
-	}
-
 	/**
-	 * ========================================================= PROCESSAMENTO
+	 * ========================================================= 
+	 * PROCESSAMENTO
 	 * =========================================================
 	 */
 
@@ -198,8 +302,9 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= CALLBACK
-	 * PROCESSAMENTO =========================================================
+	 * ========================================================= 
+	 * CALLBACK PROCESSAMENTO 
+	 * =========================================================
 	 */
 
 	@FunctionalInterface

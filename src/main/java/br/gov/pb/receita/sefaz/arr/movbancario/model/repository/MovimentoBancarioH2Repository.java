@@ -17,58 +17,56 @@ import lombok.extern.jbosslog.JBossLog;
 @JBossLog
 public class MovimentoBancarioH2Repository {
 
-	/*
-	 * SQL persistência.
-	 */
+	private static final Object LOCK = new Object();
+
 	private static final String SQL_INSERT = "INSERT INTO TB_MOV_BANCARIO " + "(BANCO, DOCUMENTO, NOME, VALOR) "
 			+ "VALUES (?, ?, ?, ?)";
 
 	@Resource(mappedName = "java:/jdbc/MovBancarioDS")
 	private DataSource dataSource;
 
-	/**
-	 * Persiste lote CNAB utilizando JDBC Batch.
-	 */
 	@TransactionAttribute(TransactionAttributeType.REQUIRED)
 	public void salvarLote(List<RegistroCnab> lote) throws Exception {
 
-		if (lote == null || lote.isEmpty()) {
+		synchronized (LOCK) {
 
-			log.warn("Lote vazio recebido para persistência");
+			if (lote == null || lote.isEmpty()) {
 
-			return;
+				log.warn("Lote vazio recebido para persistência");
 
-		}
-
-		log.infof("Iniciando persistência lote. Quantidade registros: %d", lote.size());
-
-		try (Connection connection = dataSource.getConnection();
-
-				PreparedStatement statement = connection.prepareStatement(SQL_INSERT)) {
-
-			for (RegistroCnab registro : lote) {
-
-				adicionarBatch(statement, registro);
+				return;
 
 			}
 
-			final int[] resultado = statement.executeBatch();
+			log.infof("Thread=%s Persistindo lote=%d", Thread.currentThread().getName(), lote.size());
 
-			log.infof("Lote persistido com sucesso. Registros processados: %d", resultado.length);
+			try (Connection connection = dataSource.getConnection();
 
-		} catch (Exception e) {
+					PreparedStatement statement = connection.prepareStatement(SQL_INSERT)) {
 
-			log.errorf(e, "Erro ao persistir lote. Quantidade registros: %d", lote.size());
+				for (RegistroCnab registro : lote) {
 
-			throw e;
+					adicionarBatch(statement, registro);
+
+				}
+
+				int[] resultado = statement.executeBatch();
+
+				log.infof("Lote persistido com sucesso. Registros=%d", resultado.length);
+
+			} catch (Exception e) {
+
+				log.errorf(e, "Erro ao persistir lote. Quantidade registros=%d", lote.size());
+
+				throw e;
+
+			}
+
 
 		}
 
 	}
 
-	/**
-	 * Adiciona registro no batch JDBC.
-	 */
 	private void adicionarBatch(PreparedStatement statement, RegistroCnab registro) throws Exception {
 
 		statement.setString(1, registro.getBanco());

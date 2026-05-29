@@ -1,21 +1,21 @@
 package br.gov.pb.receita.sefaz.arr.movbancario.model.repository;
 
+import java.io.File;
 import java.sql.Connection;
 import java.sql.Statement;
 
-import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import javax.ejb.Singleton;
-import javax.ejb.Startup;
 import javax.sql.DataSource;
 
-import org.jboss.logging.Logger;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.bean.MovimentoBancarioBean;
+import br.gov.pb.receita.sefaz.util.io.leitor.LeitorArquivoStream;
+import lombok.extern.jbosslog.JBossLog;
 
-@Startup
 @Singleton
+@JBossLog
 public class H2Startup {
 
-	private static final Logger LOGGER = Logger.getLogger(H2Startup.class);
 
 	private static final String SQL_CREATE_TABLE = "CREATE TABLE IF NOT EXISTS TB_MOV_BANCARIO ("
 			+ "BANCO VARCHAR(10), " + "DOCUMENTO VARCHAR(50), " + "NOME VARCHAR(100), " + "VALOR DECIMAL(15,2)" + ")";
@@ -23,10 +23,10 @@ public class H2Startup {
 	@Resource(mappedName = "java:/jdbc/MovBancarioDS")
 	private DataSource dataSource;
 
-	@PostConstruct
-	public void init() {
+	
+	public void create() {
 
-		LOGGER.info("Inicializando estrutura H2.");
+		log.info("Inicializando estrutura H2.");
 
 		try (Connection connection = dataSource.getConnection();
 
@@ -37,15 +37,18 @@ public class H2Startup {
 			 */
 			statement.execute(SQL_CREATE_TABLE);
 
-			LOGGER.info("Tabela TB_MOV_BANCARIO criada com sucesso.");
+			log.info("Tabela TB_MOV_BANCARIO criada com sucesso.");
 
 		} catch (Exception e) {
 
-			LOGGER.error("Erro inicializando H2", e);
+			log.error("Erro inicializando H2", e);
 
 			throw new RuntimeException(e);
 
 		}
+		
+		LeitorArquivoStream.removerLocksTxt(
+				new File(MovimentoBancarioBean.DIRETORIO_CNAB));
 
 	}
 

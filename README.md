@@ -1,81 +1,404 @@
-# Análise de Performance JVM - ETL CNAB
+# Processamento de Arquivos CNAB
 
+## Visão Geral
 
+O processamento de arquivos CNAB foi projetado para operar de forma assíncrona utilizando JMS/MDB, garantindo:
 
-## Objetivo
+* Processamento distribuído
+* Controle de concorrência via File System Lock
+* Persistência temporária em Redis
+* Persistência final em banco H2 utilizando JDBC Batch
+* Rastreabilidade completa do processamento
+* Controle de reprocessamento
+* Auditoria operacional
 
-Documentar os procedimentos de análise de performance, consumo de memória, GC e geração de heap dump durante o processamento ETL CNAB.
+---
 
+# Arquitetura Geral
 
-/**
- * Serviço responsável pelo processamento
- * streaming dos arquivos CNAB do
- * movimento bancário.
- *
- * Fluxo operacional:
- *
- * Agendador
- *      ↓
- * Controle de execução única
- *      ↓
- * Leitura streaming do arquivo
- *      ↓
- * Normalização da linha
- *      ↓
- * Validação estrutural/layout
- *      ↓
- * Controle de duplicidade
- *      ↓
- * Separação lógica:
- *      - registros válidos
- *      - registros inválidos
- *      ↓
- * Persistência temporária Redis
- *      ↓
- * Recuperação batch dos registros válidos
- *      ↓
- * Transformação para DTO
- *      ↓
- * Persistência JDBC batch
- *      ↓
- * Commit transacional por lote
- *      ↓
- * Atualização checkpoint/log operacional
- *      ↓
- * Limpeza recursos temporários Redis
- *      ↓
- * Finalização
- *
- * Estratégia operacional:
- *
- * - processamento streaming
- * - baixo consumo memória
- * - fail-fast para registros inválidos
- * - tolerância a falhas
- * - rastreabilidade operacional
- * - prevenção de duplicidade
- * - persistência temporária Redis
- * - separação de registros inválidos
- * - processamento batch JDBC
- * - preservação da ordem posicional CNAB
- * - redução de consumo heap/JVM
- *
- * Caso o registro já exista:
- *
- * - a linha é ignorada
- * - não é persistida novamente
- * - evita reprocessamento duplicado
- * - preserva integridade operacional
- *
- * Benefícios:
- *
- * - reprocessamento controlado
- * - troubleshooting operacional
- * - observabilidade
- * - resiliência do ETL
- * - desacoplamento entre leitura e persistência
- * - prevenção de inconsistência por duplicidade
- */
+```mermaid
+flowchart TD
+
+    JMS[JMS Queue]
+    MDB[Message Driven Bean MDB]
+
+    LOCK[File System Lock]
+    VALIDA[Valida Arquivo]
+
+    REDISCTRL[Controle Redis]
+
+    STREAM[Leitura Streaming]
+    CNAB[Validação CNAB240]
+
+    VALIDO[Registros Válidos]
+    INVALIDO[Registros Inválidos]
+
+    REDISVALIDO[(Redis Válidos)]
+    REDISINVALIDO[(Redis Inválidos)]
+
+    RECUPERA[Recupera Registros do Redis]
+
+    TRANSFORMA[Transforma CNAB em RegistroCnab]
+
+    H2[Persistência JDBC Batch H2]
+
+    FINALIZA[Finaliza Processamento]
+
+    JMS --> MDB
+    MDB --> LOCK
+    LOCK --> VALIDA
+    VALIDA --> REDISCTRL
+
+    REDISCTRL --> STREAM
+    STREAM --> CNAB
+
+    CNAB -->|Válido| VALIDO
+    CNAB -->|Inválido| INVALIDO
+
+    VALIDO --> REDISVALIDO
+    INVALIDO --> REDISINVALIDO
+
+    REDISVALIDO --> RECUPERA
+
+    RECUPERA --> TRANSFORMA
+
+    TRANSFORMA --> H2
+
+    H2 --> FINALIZA
+```
+
+---
+
+# Fluxo Detalhado
+
+## Etapa 01 - Recebimento da Mensagem
+
+O processamento inicia quando uma mensagem é consumida da fila JMS.
+
+```text
+Fila JMS
+    ↓
+MDB
+```
+
+Responsabilidades:
+
+* Receber solicitação de processamento
+* Localizar arquivo CNAB
+* Iniciar controle operacional
+
+---
+
+## Etapa 02 - Controle de Concorrência
+
+Antes de iniciar o processamento é criado um lock físico.
+
+```text
+arquivo.rem.lock
+```
+
+Objetivos:
+
+* Evitar processamento simultâneo do mesmo arquivo
+* Proteger o ambiente contra duplicidade
+* Garantir exclusividade durante a leitura
+
+---
+
+## Etapa 03 - Controle Operacional Redis
+
+No início do processamento é criado um registro de controle.
+
+### Chave
+
+```text
+movbancario:controle:<arquivo>
+```
+
+### Informações armazenadas
+
+```text
+status
+inicio
+fim
+total
+validos
+invalidos
+erro
+```
+
+---
+
+## Etapa 04 - Leitura Streaming
+
+O arquivo é processado linha a linha.
+
+```mermaid
+flowchart TD
+
+    ARQ[Arquivo CNAB]
+
+    LEITURA[Leitura Streaming]
+
+    VALIDACAO[Validação CNAB240]
+
+    ARQ --> LEITURA
+
+    LEITURA --> VALIDACAO
+```
+
+Benefícios:
+
+* Baixo consumo de memória
+* Arquivos grandes suportados
+* Processamento contínuo
+
+---
+
+## Etapa 05 - Tratamento dos Registros
+
+```mermaid
+flowchart LR
+
+    CNAB[Validação CNAB]
+
+    V[Registro Válido]
+
+    I[Registro Inválido]
+
+    REDISV[(Redis Válidos)]
+
+    REDISI[(Redis Inválidos)]
+
+    CNAB -->|OK| V
+    CNAB -->|Erro| I
+
+    V --> REDISV
+    I --> REDISI
+```
+
+### Chaves Redis
+
+Registros válidos:
+
+```text
+movbancario:validos:<arquivo>
+```
+
+Registros inválidos:
+
+```text
+movbancario:invalidos:<arquivo>
+```
+
+---
+
+## Etapa 06 - Recuperação dos Registros
+
+Após finalizar a leitura do arquivo:
+
+```mermaid
+flowchart TD
+
+    REDIS[(Redis)]
+
+    RECUPERA[Recupera Registros Válidos]
+
+    REDIS --> RECUPERA
+```
+
+Nesta etapa não há mais acesso ao arquivo físico.
+
+---
+
+## Etapa 07 - Transformação
+
+Conversão da linha CNAB para objeto de domínio.
+
+```mermaid
+flowchart LR
+
+    LINHA[String CNAB240]
+
+    DTO[RegistroCnab]
+
+    LINHA --> DTO
+```
+
+---
+
+## Etapa 08 - Persistência JDBC Batch
+
+Os registros são agrupados em lotes.
+
+```mermaid
+flowchart TD
+
+    DTO[RegistroCnab]
+
+    LOTE[Lote Batch]
+
+    H2[(H2)]
+
+    DTO --> LOTE
+
+    LOTE --> H2
+```
+
+Configuração atual:
+
+```text
+BATCH_SIZE = 50
+```
+
+Benefícios:
+
+* Menos round-trips ao banco
+* Melhor performance
+* Menor contenção de locks
+
+---
+
+## Etapa 09 - Finalização
+
+Ao término:
+
+```mermaid
+flowchart TD
+
+    PROCESSADO[Processamento Concluído]
+
+    REDIS[(Redis Controle)]
+
+    PROCESSADO --> REDIS
+```
+
+Informações atualizadas:
+
+```text
+status = FINALIZADO
+fim
+total
+validos
+invalidos
+tempo processamento
+```
+
+---
+
+# Estrutura das Chaves Redis
+
+## Controle
+
+```text
+movbancario:controle:<arquivo>
+```
+
+## Registros Válidos
+
+```text
+movbancario:validos:<arquivo>
+```
+
+## Registros Inválidos
+
+```text
+movbancario:invalidos:<arquivo>
+```
+
+---
+
+# Benefícios da Arquitetura
+
+## Processamento Assíncrono
+
+```text
+JMS + MDB
+```
+
+Permite escalabilidade horizontal.
+
+---
+
+## Controle de Concorrência
+
+```text
+File System Lock
+```
+
+Evita processamento simultâneo do mesmo arquivo.
+
+---
+
+## Persistência Temporária
+
+```text
+Redis
+```
+
+Permite:
+
+* Auditoria
+* Recuperação
+* Reprocessamento
+* Monitoramento
+
+---
+
+## Persistência Final
+
+```text
+H2 JDBC Batch
+```
+
+Reduz:
+
+* Locks
+* Tempo de transação
+* Consumo de recursos
+
+---
+
+# Fluxo Resumido
+
+```mermaid
+flowchart TD
+
+    JMS[JMS]
+
+    MDB[MDB]
+
+    LOCK[Lock Arquivo]
+
+    LEITURA[Leitura]
+
+    VALIDA[Validação]
+
+    REDIS[(Redis)]
+
+    TRANSFORMA[Transformação]
+
+    H2[(H2)]
+
+    FIM[Finalizado]
+
+    JMS --> MDB
+
+    MDB --> LOCK
+
+    LOCK --> LEITURA
+
+    LEITURA --> VALIDA
+
+    VALIDA --> REDIS
+
+    REDIS --> TRANSFORMA
+
+    TRANSFORMA --> H2
+
+    H2 --> FIM
+```
+
 
 ---
 

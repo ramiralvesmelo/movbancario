@@ -4,41 +4,62 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.yaml.snakeyaml.Yaml;
 
 import lombok.extern.jbosslog.JBossLog;
-import org.yaml.snakeyaml.Yaml;
 
 @JBossLog
 public final class YamlUtils {
 
-	private YamlUtils() {
+	private static final Map<String, Map<String, Object>> CACHE = new ConcurrentHashMap<>();
 
+	private YamlUtils() {
 	}
 
 	@SuppressWarnings("unchecked")
 	public static Map<String, Object> load(String path) throws Exception {
 
-		File file = new File(path);
+		Map<String, Object> cache = CACHE.get(path);
 
-		if (!file.exists()) {
+		if (cache != null) {
 
-			throw new IllegalStateException("Arquivo YAML não encontrado: " + path);
+			return cache;
 
 		}
 
-		try (InputStream input = new FileInputStream(file)) {
+		synchronized (YamlUtils.class) {
 
-			log.infof("Carregando YAML: %s", path);
+			cache = CACHE.get(path);
 
-			Yaml yaml = new Yaml();
+			if (cache != null) {
 
-			return (Map<String, Object>) yaml.load(input);
+				return cache;
 
-		} catch (Exception e) {
+			}
 
-			log.error("Erro ao carregar YAML", e);
+			File file = new File(path);
 
-			throw e;
+			if (!file.exists()) {
+
+				throw new IllegalStateException("Arquivo YAML não encontrado: " + path);
+
+			}
+
+			try (InputStream input = new FileInputStream(file)) {
+
+				log.infof("Carregando YAML: %s", path);
+
+				Yaml yaml = new Yaml();
+
+				cache = (Map<String, Object>) yaml.load(input);
+
+				CACHE.put(path, cache);
+
+				return cache;
+
+			}
 
 		}
 

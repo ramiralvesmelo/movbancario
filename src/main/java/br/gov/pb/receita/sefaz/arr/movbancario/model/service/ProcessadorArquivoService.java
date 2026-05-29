@@ -8,8 +8,8 @@ import javax.ejb.Stateless;
 import javax.inject.Inject;
 
 import br.gov.pb.receita.sefaz.arr.movbancario.model.entity.RegistroCnab;
+import br.gov.pb.receita.sefaz.arr.movbancario.model.repository.ControleArquivoRedisRepository;
 import br.gov.pb.receita.sefaz.arr.movbancario.model.repository.MovimentoBancarioH2Repository;
-import br.gov.pb.receita.sefaz.arr.movbancario.model.repository.MovimentoBancarioRedisRepository;
 import br.gov.pb.receita.sefaz.arr.movbancario.model.transformador.TransformadorCnab240;
 import br.gov.pb.receita.sefaz.arr.movbancario.model.validador.ValidadorCnab240;
 import br.gov.pb.receita.sefaz.util.io.leitor.LeitorArquivoStream;
@@ -19,13 +19,13 @@ import lombok.extern.jbosslog.JBossLog;
 @JBossLog
 public class ProcessadorArquivoService {
 
-	private static final int BATCH_SIZE = 10000;
+	private static final int BATCH_SIZE = 50;
 
 	@Inject
-	private MovimentoBancarioH2Repository repository;
+	private MovimentoBancarioH2Repository movimentoBancarioH2Repository;
 
 	@Inject
-	private MovimentoBancarioRedisRepository redisRepository;
+	private ControleArquivoRedisRepository controleArquivoRedisRepository;
 
 	private final ValidadorCnab240 validador = new ValidadorCnab240();
 
@@ -35,9 +35,17 @@ public class ProcessadorArquivoService {
 
 		final File arquivo = new File(entrada.getCaminhoArquivo());
 
+		final long inicio = System.currentTimeMillis();
+
+		final long[] total = { 0L };
+
+		final long[] validos = { 0L };
+
+		final long[] invalidos = { 0L };
+
 		log.infof("Iniciando processamento arquivo=%s", arquivo.getName());
 
-		if (!redisRepository.registrarArquivo(arquivo.getName())) {
+		if (controleArquivoRedisRepository.arquivoJaProcessado(arquivo.getName())) {
 
 			log.warnf("Arquivo já processado anteriormente: %s", arquivo.getName());
 
@@ -45,26 +53,30 @@ public class ProcessadorArquivoService {
 
 		}
 
+		controleArquivoRedisRepository.iniciarProcessamento(arquivo.getName());
+
 		try {
 
-			/*
-			 * ETAPA 01
-			 */
-			processarCargaRedis(arquivo);
+			processarArquivoParaRedis(arquivo, total, validos, invalidos);
 
-			/*
-			 * ETAPA 02 + 03
-			 */
-			processarCargaBanco(arquivo);
+			persistirRedisNoBanco(arquivo);
 
-			/*
-			 * ETAPA 04
-			 */
-			finalizarProcessamento(arquivo);
+			controleArquivoRedisRepository.finalizarProcessamento(arquivo.getName(), total[0], validos[0],
+					invalidos[0]);
+
+			finalizarProcessamento(arquivo, inicio, total[0], validos[0], invalidos[0]);
 
 		} catch (Exception e) {
 
-			log.errorf(e, "Erro processando arquivo=%s", arquivo.getName());
+			try {
+
+				controleArquivoRedisRepository.registrarErro(arquivo.getName(), e);
+
+			} catch (Exception ex) {
+
+				log.error("Erro ao registrar falha no Redis", ex);
+
+			}
 
 			throw e;
 
@@ -72,36 +84,43 @@ public class ProcessadorArquivoService {
 
 	}
 
-	private void processarCargaRedis(File arquivo) throws Exception {
+	private void processarArquivoParaRedis(final File arquivo, final long[] total, final long[] validos,
+			final long[] invalidos) throws Exception {
 
-		final List<String> blocoRedis = new ArrayList<>();
+		final List<String> blocoRedis = new ArrayList<>(BATCH_SIZE);
 
 		LeitorArquivoStream.processar(arquivo, (linha, numeroLinha) -> {
 
+			total[0]++;
+
 			try {
-
-				/*
-				 * Ignora header.
-				 */
-				if (numeroLinha == 1) {
-
-					return;
-
-				}
 
 				validador.validar(linha, numeroLinha);
 
 				blocoRedis.add(linha);
 
+				validos[0]++;
+
 				if (blocoRedis.size() >= BATCH_SIZE) {
 
-					processarRegistroValido(arquivo, blocoRedis);
+					controleArquivoRedisRepository.salvarBlocoValido(arquivo.getName(), new ArrayList<>(blocoRedis));
+
+					controleArquivoRedisRepository.atualizarContadores(arquivo.getName(), total[0], validos[0],
+							invalidos[0]);
+
+					blocoRedis.clear();
 
 				}
 
 			} catch (Exception e) {
 
-				processarRegistroInvalido(arquivo, linha, numeroLinha, e);
+				invalidos[0]++;
+
+				List<String> erros = new ArrayList<>(1);
+
+				erros.add(linha + "|ERRO=" + tratarMensagemErro(e));
+
+				controleArquivoRedisRepository.salvarBlocoInvalido(arquivo.getName(), erros);
 
 			}
 
@@ -109,96 +128,82 @@ public class ProcessadorArquivoService {
 
 		if (!blocoRedis.isEmpty()) {
 
-			processarRegistroValido(arquivo, blocoRedis);
+			controleArquivoRedisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
 
 		}
 
-		log.infof("Carga Redis finalizada arquivo=%s", arquivo.getName());
+		controleArquivoRedisRepository.atualizarContadores(arquivo.getName(), total[0], validos[0], invalidos[0]);
 
 	}
 
-	private void processarCargaBanco(File arquivo) throws Exception {
+	private void persistirRedisNoBanco(File arquivo) throws Exception {
 
-		long bloco = 0;
+		List<String> linhasValidas = controleArquivoRedisRepository.recuperarRegistrosValidos(arquivo.getName());
 
-		while (true) {
+		if (linhasValidas == null || linhasValidas.isEmpty()) {
 
-			final List<String> linhas = redisRepository.obterBlocoValido(arquivo.getName(), bloco, BATCH_SIZE);
-
-			if (linhas == null || linhas.isEmpty()) {
-
-				break;
-
-			}
-
-			final List<RegistroCnab> lote = transformarLote(linhas, bloco);
-
-			if (!lote.isEmpty()) {
-
-				repository.salvarLote(lote);
-
-			}
-
-			log.infof("Bloco persistido banco. arquivo=%s bloco=%d registros=%d", arquivo.getName(), bloco,
-					lote.size());
-
-			bloco++;
-
-		}
-
-	}
-
-	private List<RegistroCnab> transformarLote(List<String> linhas, long bloco) throws Exception {
-
-		final List<RegistroCnab> lote = new ArrayList<>();
-
-		long numeroLinha = (bloco * BATCH_SIZE) + 1;
-
-		for (String linha : linhas) {
-
-			numeroLinha++;
-
-			final RegistroCnab registro = transformador.transformar(linha, numeroLinha);
-
-			lote.add(registro);
-
-		}
-
-		return lote;
-
-	}
-
-	private void processarRegistroValido(File arquivo, List<String> blocoRedis) throws Exception {
-
-		if (blocoRedis.isEmpty()) {
+			log.warnf("Nenhum registro válido encontrado no Redis. arquivo=%s", arquivo.getName());
 
 			return;
 
 		}
 
-		redisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
+		List<RegistroCnab> lote = new ArrayList<>(BATCH_SIZE);
 
-		log.infof("Bloco Redis persistido. arquivo=%s registros=%d", arquivo.getName(), blocoRedis.size());
+		long numeroLinha = 0L;
 
-		blocoRedis.clear();
+		for (String linha : linhasValidas) {
+
+			numeroLinha++;
+
+			RegistroCnab registro = transformador.transformar(linha, numeroLinha);
+
+			lote.add(registro);
+
+			if (lote.size() >= BATCH_SIZE) {
+
+				movimentoBancarioH2Repository.salvarLote(new ArrayList<>(lote));
+
+				lote.clear();
+
+			}
+
+		}
+
+		if (!lote.isEmpty()) {
+
+			movimentoBancarioH2Repository.salvarLote(lote);
+
+		}
+
+		log.infof("Persistência H2 concluída. arquivo=%s registros=%d", arquivo.getName(), linhasValidas.size());
 
 	}
 
-	private void processarRegistroInvalido(File arquivo, String linha, long numeroLinha, Exception e) throws Exception {
+	private String tratarMensagemErro(Exception e) {
 
-		final List<String> invalidos = new ArrayList<>(1);
+		if (e == null) {
 
-		invalidos.add(linha + "|LINHA=" + numeroLinha + "|ERRO=" + e.getMessage());
+			return "Erro desconhecido";
 
-		redisRepository.salvarBlocoInvalido(arquivo.getName(), invalidos);
+		}
 
-		log.errorf(e, "Registro inválido. arquivo=%s linha=%d", arquivo.getName(), numeroLinha);
+		if (e.getMessage() == null || e.getMessage().trim().isEmpty()) {
+
+			return e.getClass().getSimpleName();
+
+		}
+
+		return e.getMessage();
 
 	}
 
-	private void finalizarProcessamento(File arquivo) {
+	private void finalizarProcessamento(File arquivo, long inicio, long total, long validos, long invalidos) {
 
-		log.infof("Processamento finalizado arquivo=%s", arquivo.getName());
+		long tempo = System.currentTimeMillis() - inicio;
+
+		log.infof("Arquivo=%s Total=%d Validos=%d Invalidos=%d Tempo=%d ms", arquivo.getName(), total, validos,
+				invalidos, tempo);
 
 	}
 

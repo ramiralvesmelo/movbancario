@@ -42,7 +42,7 @@ public class MovimentoBancarioBean implements MovimentoBancarioRemote {
 	 * -Dfile.server.movimento.bancario=/tmp/cnab
 	 */
 	//private static final String DIRETORIO_CNAB = System.getProperty("file.server.movimento.bancario");
-	private static final String DIRETORIO_CNAB = "/tmp/cnab";
+	public static final String DIRETORIO_CNAB = "/tmp/cnab";
 	
 
 	/**
