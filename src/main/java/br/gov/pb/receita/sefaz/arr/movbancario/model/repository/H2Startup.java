@@ -16,24 +16,35 @@ import lombok.extern.jbosslog.JBossLog;
 @JBossLog
 public class H2Startup {
 
+	private static final String SQL_DROP_TABLE = "DROP TABLE IF EXISTS TB_MOV_BANCARIO";
 
-	private static final String SQL_CREATE_TABLE = "CREATE TABLE IF NOT EXISTS TB_MOV_BANCARIO ("
-			+ "BANCO VARCHAR(10), " + "DOCUMENTO VARCHAR(50), " + "NOME VARCHAR(100), " + "VALOR DECIMAL(15,2)" + ")";
+	private static final String SQL_CREATE_TABLE = "CREATE TABLE TB_MOV_BANCARIO (" + "BANCO VARCHAR(10), "
+			+ "DOCUMENTO VARCHAR(50), " + "NOME VARCHAR(100), " + "VALOR DECIMAL(15,2)" + ")";
 
 	@Resource(mappedName = "java:/jdbc/MovBancarioDS")
 	private DataSource dataSource;
 
-	
 	public void create() {
 
 		log.info("Inicializando estrutura H2.");
 
-		try (Connection connection = dataSource.getConnection();
+		try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
 
-				Statement statement = connection.createStatement()) {
+			log.infof("URL H2: %s", connection.getMetaData().getURL());
+
+			log.infof("Catalog: %s", connection.getCatalog());
+
+			log.infof("User: %s", connection.getMetaData().getUserName());
 
 			/*
-			 * Cria tabela movimentação bancária.
+			 * Remove tabela anterior.
+			 */
+			statement.execute(SQL_DROP_TABLE);
+
+			log.info("Tabela TB_MOV_BANCARIO removida.");
+
+			/*
+			 * Cria tabela novamente.
 			 */
 			statement.execute(SQL_CREATE_TABLE);
 
@@ -46,9 +57,8 @@ public class H2Startup {
 			throw new RuntimeException(e);
 
 		}
-		
-		LeitorArquivoStream.removerLocksTxt(
-				new File(MovimentoBancarioBean.DIRETORIO_CNAB));
+
+		LeitorArquivoStream.removerLocksTxt(new File(MovimentoBancarioBean.DIRETORIO_CNAB));
 
 	}
 
