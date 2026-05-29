@@ -15,6 +15,8 @@ public final class LeitorArquivoStream {
 
 	private static final long LOG_PROGRESSO_LINHAS = 1000;
 
+	private static final String LOCK_EXTENSION = ".lock";
+
 	private LeitorArquivoStream() {
 
 		throw new IllegalStateException("Classe utilitária não pode ser instanciada.");
@@ -22,20 +24,17 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= 
-	 * PROCESSAMENTO STREAM 
-	 * =========================================================
+	 * ========================================================= PROCESSAMENTO
+	 * STREAM =========================================================
 	 *
 	 * Lê o arquivo linha por linha utilizando stream, delegando o processamento
 	 * para implementação recebida.
 	 *
 	 * Utiliza FileLock para impedir processamento concorrente.
 	 *
-	 * Exemplo lock:
+	 * Exemplo:
 	 *
 	 * arquivo.txt.lock
-	 *
-	 * @throws Exception
 	 */
 	public static void processar(File arquivo, ProcessadorLinha processador) throws Exception {
 
@@ -49,47 +48,79 @@ public final class LeitorArquivoStream {
 
 		try (RandomAccessFile raf = new RandomAccessFile(arquivoLock, "rw");
 
-		        FileChannel channel = raf.getChannel();
+				FileChannel channel = raf.getChannel();
 
-		        BufferedReader reader = new BufferedReader(new FileReader(arquivo))) {
+				BufferedReader reader = new BufferedReader(new FileReader(arquivo))) {
 
-		    FileLock lock = null;
+			FileLock lock;
 
-		    try {
+			try {
 
-		        lock = channel.tryLock();
+				lock = channel.tryLock();
 
-		    } catch (OverlappingFileLockException e) {
+			} catch (OverlappingFileLockException e) {
 
-		        log.warnf(
-		                "Arquivo já está sendo processado por outra thread: %s",
-		                arquivo.getName());
+				log.warnf("Arquivo já está sendo processado por outra thread: %s", arquivo.getName());
 
-		        return;
+				return;
 
-		    }
+			}
 
-		    validarLock(lock, arquivo);
+			validarLock(lock, arquivo);
 
-		    processarLinhas(
-		            reader,
-		            processador,
-		            arquivo);
+			processarLinhas(reader, processador, arquivo);
+
+		} finally {
+
+			removerLock(arquivo);
 
 		}
 
 	}
 
 	/**
-	 * ========================================================= 
-	 * LIMPEZA LOCKS
+	 * ========================================================= LIMPEZA LOCK
 	 * =========================================================
-	 *
-	 * Remove todos os arquivos:
-	 *
-	 * *.lock
-	 *
-	 * existentes em um diretório.
+	 */
+	public static void removerLock(File arquivo) {
+
+		if (arquivo == null) {
+
+			return;
+
+		}
+
+		final File lock = obterArquivoLock(arquivo);
+
+		if (!lock.exists()) {
+
+			return;
+
+		}
+
+		try {
+
+			if (lock.delete()) {
+
+				log.infof("Lock removido arquivo=%s", arquivo.getName());
+
+			} else {
+
+				log.warnf("Nao foi possivel remover lock arquivo=%s", arquivo.getName());
+
+			}
+
+		} catch (Exception e) {
+
+			log.errorf(e, "Erro removendo lock arquivo=%s", arquivo.getName());
+
+		}
+
+	}
+
+	/**
+	 * ========================================================= LIMPEZA LOCKS
+	 * =========================================================
 	 */
 	public static void removerLocks(File diretorio) {
 
@@ -99,19 +130,13 @@ public final class LeitorArquivoStream {
 
 		}
 
-		if (!diretorio.exists()) {
+		if (!diretorio.exists() || !diretorio.isDirectory()) {
 
 			return;
 
 		}
 
-		if (!diretorio.isDirectory()) {
-
-			return;
-
-		}
-
-		File[] locks = diretorio.listFiles(file -> file.isFile() && file.getName().endsWith(".lock"));
+		File[] locks = diretorio.listFiles(file -> file.isFile() && file.getName().endsWith(LOCK_EXTENSION));
 
 		if (locks == null || locks.length == 0) {
 
@@ -146,11 +171,8 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= 
-	 * LIMPEZA LOCKS TXT 
-	 * =========================================================
-	 *
-	 * Remove apenas locks associados aos arquivos TXT encontrados.
+	 * ========================================================= LIMPEZA LOCKS
+	 * TXT =========================================================
 	 */
 	public static void removerLocksTxt(File diretorio) {
 
@@ -170,34 +192,16 @@ public final class LeitorArquivoStream {
 
 		for (File arquivo : arquivos) {
 
-			File lock = new File(arquivo.getAbsolutePath() + ".lock");
-
-			if (!lock.exists()) {
-
-				continue;
-
-			}
-
-			if (lock.delete()) {
-
-				log.infof("Lock removido arquivo=%s", arquivo.getName());
-
-			} else {
-
-				log.warnf("Nao foi possivel remover lock arquivo=%s", arquivo.getName());
-
-			}
+			removerLock(arquivo);
 
 		}
 
 	}
 
 	/**
-	 * ========================================================= 
-	 * VALIDAÇÕES
+	 * ========================================================= VALIDAÇÕES
 	 * =========================================================
 	 */
-
 	private static void validarArquivo(File arquivo) {
 
 		if (arquivo == null) {
@@ -237,14 +241,12 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= 
-	 * LOCK
+	 * ========================================================= LOCK
 	 * =========================================================
 	 */
-
 	private static File obterArquivoLock(File arquivo) {
 
-		return new File(arquivo.getAbsolutePath() + ".lock");
+		return new File(arquivo.getAbsolutePath() + LOCK_EXTENSION);
 
 	}
 
@@ -263,11 +265,9 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= 
-	 * PROCESSAMENTO
+	 * ========================================================= PROCESSAMENTO
 	 * =========================================================
 	 */
-
 	private static void processarLinhas(BufferedReader reader, ProcessadorLinha processador, File arquivo)
 			throws Exception {
 
@@ -302,11 +302,9 @@ public final class LeitorArquivoStream {
 	}
 
 	/**
-	 * ========================================================= 
-	 * CALLBACK PROCESSAMENTO 
-	 * =========================================================
+	 * ========================================================= CALLBACK
+	 * PROCESSAMENTO =========================================================
 	 */
-
 	@FunctionalInterface
 	public interface ProcessadorLinha {
 

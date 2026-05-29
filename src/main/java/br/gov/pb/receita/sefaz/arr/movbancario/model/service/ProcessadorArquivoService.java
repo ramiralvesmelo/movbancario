@@ -89,50 +89,64 @@ public class ProcessadorArquivoService {
 
 		final List<String> blocoRedis = new ArrayList<>(BATCH_SIZE);
 
-		LeitorArquivoStream.processar(arquivo, (linha, numeroLinha) -> {
+		try {
 
-			total[0]++;
+			LeitorArquivoStream.processar(arquivo, (linha, numeroLinha) -> {
 
-			try {
+				total[0]++;
 
-				validador.validar(linha, numeroLinha);
+				try {
 
-				blocoRedis.add(linha);
+					validador.validar(linha, numeroLinha);
 
-				validos[0]++;
+					blocoRedis.add(linha);
 
-				if (blocoRedis.size() >= BATCH_SIZE) {
+					validos[0]++;
 
-					controleArquivoRedisRepository.salvarBlocoValido(arquivo.getName(), new ArrayList<>(blocoRedis));
+					if (blocoRedis.size() >= BATCH_SIZE) {
 
-					controleArquivoRedisRepository.atualizarContadores(arquivo.getName(), total[0], validos[0],
-							invalidos[0]);
+						controleArquivoRedisRepository.salvarBlocoValido(arquivo.getName(),
+								new ArrayList<>(blocoRedis));
 
-					blocoRedis.clear();
+						controleArquivoRedisRepository.atualizarContadores(arquivo.getName(), total[0], validos[0],
+								invalidos[0]);
+
+						blocoRedis.clear();
+
+					}
+
+				} catch (Exception e) {
+
+					invalidos[0]++;
+
+					List<String> erros = new ArrayList<>(1);
+
+					erros.add(linha + "|ERRO=" + tratarMensagemErro(e));
+
+					controleArquivoRedisRepository.salvarBlocoInvalido(arquivo.getName(), erros);
 
 				}
 
-			} catch (Exception e) {
+			});
 
-				invalidos[0]++;
+			/*
+			 * Persiste último bloco pendente.
+			 */
+			if (!blocoRedis.isEmpty()) {
 
-				List<String> erros = new ArrayList<>(1);
-
-				erros.add(linha + "|ERRO=" + tratarMensagemErro(e));
-
-				controleArquivoRedisRepository.salvarBlocoInvalido(arquivo.getName(), erros);
+				controleArquivoRedisRepository.salvarBlocoValido(arquivo.getName(), new ArrayList<>(blocoRedis));
 
 			}
 
-		});
+			controleArquivoRedisRepository.atualizarContadores(arquivo.getName(), total[0], validos[0], invalidos[0]);
 
-		if (!blocoRedis.isEmpty()) {
-
-			controleArquivoRedisRepository.salvarBlocoValido(arquivo.getName(), blocoRedis);
+		} finally {
+			/*
+			 * Remove lock físico caso exista.
+			 */			
+			LeitorArquivoStream.removerLock(arquivo);
 
 		}
-
-		controleArquivoRedisRepository.atualizarContadores(arquivo.getName(), total[0], validos[0], invalidos[0]);
 
 	}
 
