@@ -19,43 +19,62 @@ O processamento de arquivos CNAB foi projetado para operar de forma assíncrona 
 ```mermaid
 flowchart TD
 
-    JMS[JMS Queue]
+    SCHED[MyScheduler<br/>Execução a cada 5 minutos]
+
+    JMSPRODUCER[Produtor JMS<br/>Localiza Arquivos CNAB]
+
+    JMSQUEUE[JMS Queue<br/>cargaArquivoMovimentoBancario]
+
     MDB[Message Driven Bean MDB]
 
-    LOCK[File System Lock]
-    VALIDA[Valida Arquivo]
+    LOCK[File System Lock<br/>arquivo.rem.lock]
+
+    VALIDAARQ[Validação Arquivo<br/>Reprocessamento]
 
     REDISCTRL[Controle Redis]
 
     STREAM[Leitura Streaming]
+
     CNAB[Validação CNAB240]
 
     VALIDO[Registros Válidos]
+
     INVALIDO[Registros Inválidos]
 
     REDISVALIDO[(Redis Válidos)]
+
     REDISINVALIDO[(Redis Inválidos)]
 
-    RECUPERA[Recupera Registros do Redis]
+    RECUPERA[Recupera Registros<br/>Válidos Redis]
 
-    TRANSFORMA[Transforma CNAB em RegistroCnab]
+    TRANSFORMA[Transforma Linha CNAB<br/>em RegistroCnab]
 
     H2[Persistência JDBC Batch H2]
 
     FINALIZA[Finaliza Processamento]
 
-    JMS --> MDB
+    SCHED --> JMSPRODUCER
+
+    JMSPRODUCER --> JMSQUEUE
+
+    JMSQUEUE --> MDB
+
     MDB --> LOCK
-    LOCK --> VALIDA
-    VALIDA --> REDISCTRL
+
+    LOCK --> VALIDAARQ
+
+    VALIDAARQ --> REDISCTRL
 
     REDISCTRL --> STREAM
+
     STREAM --> CNAB
 
     CNAB -->|Válido| VALIDO
+
     CNAB -->|Inválido| INVALIDO
 
     VALIDO --> REDISVALIDO
+
     INVALIDO --> REDISINVALIDO
 
     REDISVALIDO --> RECUPERA
@@ -65,7 +84,10 @@ flowchart TD
     TRANSFORMA --> H2
 
     H2 --> FINALIZA
+
+    FINALIZA --> REDISCTRL
 ```
+
 
 ---
 
