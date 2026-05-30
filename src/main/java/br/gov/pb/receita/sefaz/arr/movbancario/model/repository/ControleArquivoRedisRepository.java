@@ -82,24 +82,45 @@ public class ControleArquivoRedisRepository {
 	 * CONTROLE PROCESSAMENTO
 	 * =========================================================================
 	 */
-	public void iniciarProcessamento(String arquivo) {
+	public boolean iniciarProcessamento(String arquivo) {
 
-		try (Jedis jedis = jedisPool.getResource()) {
+	    try (Jedis jedis = jedisPool.getResource()) {
 
-			String chave = PREFIXO_CONTROLE + arquivo;
+	        String chave = PREFIXO_CONTROLE + arquivo;
 
-			jedis.hset(chave, "arquivo", arquivo);
-			jedis.hset(chave, "status", "PROCESSANDO");
-			jedis.hset(chave, "inicio", agora());
-			jedis.hset(chave, "fim", "");
-			jedis.hset(chave, "erro", "");
-			jedis.hset(chave, "total", "0");
-			jedis.hset(chave, "validos", "0");
-			jedis.hset(chave, "invalidos", "0");
+	        String statusAtual =
+	                jedis.hget(chave, "status");
 
-		}
+	        /*
+	         * Já concluído.
+	         */
+	        if ("CONCLUIDO".equals(statusAtual)) {
 
-		log.infof("Processamento iniciado arquivo=%s", arquivo);
+	            return false;
+
+	        }
+
+	        /*
+	         * Já em execução.
+	         */
+	        if ("PROCESSANDO".equals(statusAtual)) {
+
+	            return true;
+
+	        }
+
+	        jedis.hset(chave, "arquivo", arquivo);
+	        jedis.hset(chave, "status", "PROCESSANDO");
+	        jedis.hset(chave, "inicio", agora());
+	        jedis.hset(chave, "fim", "");
+	        jedis.hset(chave, "erro", "");
+	        jedis.hset(chave, "total", "0");
+	        jedis.hset(chave, "validos", "0");
+	        jedis.hset(chave, "invalidos", "0");
+
+	        return true;
+
+	    }
 
 	}
 

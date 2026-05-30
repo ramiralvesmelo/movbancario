@@ -45,15 +45,10 @@ public class ProcessadorArquivoService {
 
 		log.infof("Iniciando processamento arquivo=%s", arquivo.getName());
 
-		if (controleArquivoRedisRepository.arquivoJaProcessado(arquivo.getName())) {
-
+		if (!controleArquivoRedisRepository.iniciarProcessamento(arquivo.getName())) {
 			log.warnf("Arquivo já processado anteriormente: %s", arquivo.getName());
-
 			return;
-
 		}
-
-		controleArquivoRedisRepository.iniciarProcessamento(arquivo.getName());
 
 		try {
 
